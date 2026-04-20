@@ -1,0 +1,26 @@
+# Virtual environments
+pa1/
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Outputs do crawler (nao versionar corpus grande)
+data/
+
+# Artefatos do relatorio
+docs/*.aux
+docs/*.log
+docs/*.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

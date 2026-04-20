@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""
+crawler.py
+----------
+Entry point do web crawler. Orquestra os demais modulos:
+
+  seeds -> Frontier -> [N workers] -> Fetcher -> Parser -> Storage
+                                               +-> enqueue outlinks
+
+Uso:
+  python3 crawler.py -s <seeds_file> -n <limit> [-d]
+
+Argumentos:
+  -s, --seeds   Arquivo com URLs iniciais (uma por linha).
+  -n, --limit   Numero alvo de paginas a baixar.
+  -d, --debug   Modo debug: imprime JSON por pagina em stdout.
+"""
+
+import argparse
+import json
+import os
+import sys
+import threading
+import time
+
+# Garante que 'src/' eh encontrado independente de onde rodamos o script.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from src.config import NUM_THREADS, METRICS_FILE
+from src.core.frontier import Frontier
+from src.net.robots import RobotsCache
+from src.net.fetcher import fetch
+from src.content.parser import parse_html
+from src.output.storage import WarcStorage
+from src.output.metrics import Metrics
+
+
+def worker(
+    worker_id: int,
+    frontier: Frontier,
+    storage: WarcStorage,
+    metrics: Metrics,
+    stop_event: threading.Event,
+    limit: int,
+    debug: bool,
+):
+    """
+    Loop principal de uma thread worker.
+
+    Repete ate stop_event ser setado OU o frontier ficar vazio:
+      1. Pega a proxima URL (bloqueia se preciso)
+      2. Faz o fetch
+      3. Se OK e eh HTML: parseia, armazena, e enfileira os outlinks
+      4. Chama release_host para atualizar o delay do host (em finally)
+    """
+    while not stop_event.is_set():
+        url, _ = frontier.get_next(stop_event)
+        if url is None:
+            return
+
+        try:
+            result = fetch(url)
+
+            if not result.ok:
+                metrics.record_failure()
+                continue
+
+            try:
+                parsed = parse_html(
+                    result.raw_bytes.decode("utf-8", errors="replace"),
+                    result.final_url,
+                )
+            except Exception:
+                metrics.record_failure()
+                continue
+
+            saved = storage.store(result)
+            if not saved:
+                metrics.record_failure()
+                continue
+
+            metrics.record_success(len(result.raw_bytes))
+
+            if debug:
+                record = {
+                    "URL": result.final_url,
+                    "Title": parsed.title,
+                    "Text": parsed.text_preview,
+                    "Timestamp": int(time.time()),
+                }
+                print(json.dumps(record, ensure_ascii=False), flush=True)
+
+            # Verifica limite logo apos incrementar.
+            if storage.total_saved() >= limit:
+                stop_event.set()
+                frontier.notify_all()
+                return
+
+            # Enfileira outlinks descobertos.
+            for link in parsed.outlinks:
+                if stop_event.is_set():
+                    break
+                frontier.add(link)
+
+        finally:
+            # SEMPRE liberamos o host, mesmo em caso de erro.
+            frontier.release_host(url)
+
+
+def load_seeds(path: str) -> list[str]:
+    """Le seeds do arquivo (uma URL por linha). Ignora vazias e comentarios."""
+    seeds = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            seeds.append(line)
+    return seeds
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Simple polite web crawler.")
+    parser.add_argument("-s", "--seeds", required=True, help="Arquivo de seeds.")
+    parser.add_argument("-n", "--limit", required=True, type=int, help="Numero de paginas.")
+    parser.add_argument("-d", "--debug", action="store_true", help="Modo debug (JSON em stdout).")
+    args = parser.parse_args()
+
+    seeds = load_seeds(args.seeds)
+    if not seeds:
+        print("ERRO: arquivo de seeds vazio.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"[crawler] {len(seeds)} seeds carregadas", file=sys.stderr)
+    print(f"[crawler] alvo: {args.limit} paginas com {NUM_THREADS} threads", file=sys.stderr)
+
+    robots = RobotsCache()
+    frontier = Frontier(robots)
+    storage = WarcStorage()
+    metrics = Metrics(output_path=METRICS_FILE)
+    stop_event = threading.Event()
+    start_time = time.time()
+
+    enqueued = 0
+    for url in seeds:
+        if frontier.add(url):
+            enqueued += 1
+    print(f"[crawler] {enqueued}/{len(seeds)} seeds enfileiradas", file=sys.stderr)
+
+    if enqueued == 0:
+        print("ERRO: nenhuma seed valida.", file=sys.stderr)
+        sys.exit(1)
+
+    metrics.start(storage, frontier, stop_event)
+
+    threads = []
+    for i in range(NUM_THREADS):
+        t = threading.Thread(
+            target=worker,
+            args=(i, frontier, storage, metrics, stop_event, args.limit, args.debug),
+            name=f"worker-{i}",
+            daemon=True,
+        )
+        t.start()
+        threads.append(t)
+
+    try:
+        for t in threads:
+            t.join()
+    except KeyboardInterrupt:
+        print("\n[crawler] interrompido pelo usuario", file=sys.stderr)
+        stop_event.set()
+        frontier.notify_all()
+        for t in threads:
+            t.join(timeout=2.0)
+
+    storage.close()
+    metrics.close()
+    elapsed = time.time() - start_time
+    saved = storage.total_saved()
+    rate = saved / elapsed if elapsed > 0 else 0.0
+    print(
+        f"[crawler] concluido: {saved} paginas em {elapsed:.1f}s ({rate:.1f} pages/s)",
+        file=sys.stderr,
+    )
+
+
+if __name__ == "__main__":
+    main()
