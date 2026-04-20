@@ -10,7 +10,6 @@ from url_normalize import url_normalize
 
 from src.config.filters import ALLOWED_SCHEMES, NON_HTML_EXTENSIONS
 
-
 def normalize_url(url: str) -> str | None:
     """
     Normaliza uma URL para uma forma canonica usada como chave de dedup.

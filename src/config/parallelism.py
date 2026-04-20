@@ -11,7 +11,7 @@ Configuracoes de paralelismo e coleta de metricas.
 NUM_THREADS = 16
 
 # Intervalo (em segundos) entre snapshots de metricas no CSV.
-METRICS_INTERVAL = 5.0
+METRICS_INTERVAL = 30.0
 
 # Caminho do arquivo de metricas (CSV com colunas:
 # timestamp, elapsed, pages_saved, pages_failed, bytes_downloaded, frontier_size).

@@ -14,3 +14,9 @@ WARC_DIR = "data/corpus"
 # Prefixo do nome dos arquivos gerados (ex: corpus-00000.warc.gz,
 # corpus-00001.warc.gz, ...).
 WARC_PREFIX = "corpus"
+
+# Log append-only de URLs ja processadas, usado para retomar apos crash.
+VISITED_FILE = "data/visited.txt"
+
+# A cada quantas paginas damos fsync no log de visitados.
+VISITED_FSYNC_EVERY = 50

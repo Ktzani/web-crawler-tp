@@ -65,7 +65,9 @@ Antes de começar o crawl de 100k, **sempre** valide com um crawl pequeno.
 Isso garante que seeds, rede e ambiente estão funcionando.
 
 ```bash
-python3 crawler.py -s seeds/seeds-2017114124.txt -n 100 -d 2> crawl-test.log
+python3 crawler.py -s seeds/seeds-2017114124.txt -n 10 -d > data/logs/crawl-test.jsonl
+ou 
+.\.venv\Scripts\python.exe
 ```
 
 **O que esperar:**

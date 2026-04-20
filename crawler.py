@@ -34,6 +34,10 @@ from src.content.parser import parse_html
 from src.output.storage import WarcStorage
 from src.output.metrics import Metrics
 
+from logging import basicConfig, getLogger, INFO
+
+basicConfig(level=INFO)
+logger = getLogger(__name__)
 
 def worker(
     worker_id: int,
@@ -108,14 +112,32 @@ def worker(
 
 
 def load_seeds(path: str) -> list[str]:
-    """Le seeds do arquivo (uma URL por linha). Ignora vazias e comentarios."""
-    seeds = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            seeds.append(line)
+    """
+    Le seeds de um arquivo OU de um diretorio.
+    Se for diretorio, concatena todos os .txt dentro (dedup preservando ordem).
+    Ignora linhas vazias e comentarios.
+    """
+    if os.path.isdir(path):
+        files = sorted(
+            os.path.join(path, f)
+            for f in os.listdir(path)
+            if f.endswith(".txt")
+        )
+    else:
+        files = [path]
+
+    seen: set[str] = set()
+    seeds: list[str] = []
+    for filepath in files:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line in seen:
+                    continue
+                seen.add(line)
+                seeds.append(line)
     return seeds
 
 
@@ -124,31 +146,45 @@ def main():
     parser.add_argument("-s", "--seeds", required=True, help="Arquivo de seeds.")
     parser.add_argument("-n", "--limit", required=True, type=int, help="Numero de paginas.")
     parser.add_argument("-d", "--debug", action="store_true", help="Modo debug (JSON em stdout).")
+    parser.add_argument("-r", "--resume", action="store_true", help="Retoma de onde parou usando data/visited.txt.")
     args = parser.parse_args()
 
     seeds = load_seeds(args.seeds)
     if not seeds:
-        print("ERRO: arquivo de seeds vazio.", file=sys.stderr)
+        logger.error("ERRO: arquivo de seeds vazio.")
         sys.exit(1)
 
-    print(f"[crawler] {len(seeds)} seeds carregadas", file=sys.stderr)
-    print(f"[crawler] alvo: {args.limit} paginas com {NUM_THREADS} threads", file=sys.stderr)
-
+    logger.info(f"[crawler] {len(seeds)} seeds carregadas")
+    logger.info(f"[crawler] alvo: {args.limit} paginas com {NUM_THREADS} threads")
     robots = RobotsCache()
     frontier = Frontier(robots)
-    storage = WarcStorage()
+    storage = WarcStorage(resume=args.resume)
     metrics = Metrics(output_path=METRICS_FILE)
     stop_event = threading.Event()
     start_time = time.time()
+
+    if args.resume:
+        visited = frontier.load_visited()
+        frontier.mark_visited(visited)
+        storage.set_initial_count(len(visited))  
+        logger.info(f"[crawler] retomando: {len(visited)} URLs ja processadas")
+        if storage.total_saved() >= args.limit: 
+            logger.info(f"[crawler] limite ja atingido ({storage.total_saved()}/{args.limit}), nada a fazer")
+            storage.close()
+            sys.exit(0)
 
     enqueued = 0
     for url in seeds:
         if frontier.add(url):
             enqueued += 1
-    print(f"[crawler] {enqueued}/{len(seeds)} seeds enfileiradas", file=sys.stderr)
+    logger.info(f"[crawler] {enqueued}/{len(seeds)} seeds enfileiradas")
 
     if enqueued == 0:
-        print("ERRO: nenhuma seed valida.", file=sys.stderr)
+        if args.resume and visited:
+            logger.info(f"[crawler] nenhuma seed nova, mas {len(visited)} URLs ja visitadas. "
+                        f"Nada a fazer: precisa de seeds novas ou descobrir outlinks. Abortando.")
+        else:
+            logger.error("ERRO: nenhuma seed valida.")
         sys.exit(1)
 
     metrics.start(storage, frontier, stop_event)
@@ -165,21 +201,29 @@ def main():
         threads.append(t)
 
     try:
-        for t in threads:
-            t.join()
+        while any(t.is_alive() for t in threads):
+            for t in threads:
+                t.join(timeout=0.2)
     except KeyboardInterrupt:
-        print("\n[crawler] interrompido pelo usuario", file=sys.stderr)
+        logger.warning("\n[crawler] Ctrl+C recebido. Fazendo shutdown limpo...")
         stop_event.set()
         frontier.notify_all()
+    
+        shutdown_deadline = time.time() + 10.0
         for t in threads:
-            t.join(timeout=2.0)
+            remaining = max(0.1, shutdown_deadline - time.time())
+            t.join(timeout=remaining)
+    
+        alive = sum(1 for t in threads if t.is_alive())
+        if alive > 0:
+            logger.warning(f"[crawler] {alive} threads ainda ativas apos 10s, forcando shutdown")
 
     storage.close()
     metrics.close()
     elapsed = time.time() - start_time
     saved = storage.total_saved()
     rate = saved / elapsed if elapsed > 0 else 0.0
-    print(
+    logger.info(
         f"[crawler] concluido: {saved} paginas em {elapsed:.1f}s ({rate:.1f} pages/s)",
         file=sys.stderr,
     )

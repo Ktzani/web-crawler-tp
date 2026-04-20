@@ -21,6 +21,7 @@ rapidas (memoria); threads passam a maior parte do tempo em I/O de rede.
 """
 
 import heapq
+import os
 import threading
 import time
 from collections import deque
@@ -30,6 +31,9 @@ from src.config.politeness import (
     MAX_PAGES_PER_HOST,
     MAX_QUEUE_PER_HOST,
 )
+
+from src.config.storage import VISITED_FILE
+
 from src.content.url_utils import get_host, is_valid_for_crawling
 from src.network.robots import RobotsCache
 
@@ -157,6 +161,17 @@ class Frontier:
                 heapq.heappush(self._ready_heap, (next_time, host))
                 self._cond.notify()
 
+    def mark_visited(self, urls):
+        """Marca URLs como ja vistas (usado no resume para nao reprocessar)."""
+        with self._lock:
+            for url in urls:
+                if url in self._seen:
+                    continue
+                self._seen.add(url)
+                host = get_host(url)
+                if host is not None:
+                    self._host_count[host] = self._host_count.get(host, 0) + 1
+
     def size(self) -> int:
         with self._lock:
             return self._pending_urls
@@ -165,3 +180,9 @@ class Frontier:
         """Acorda todas as threads (usado no shutdown)."""
         with self._cond:
             self._cond.notify_all()
+            
+    def load_visited(self, path: str = VISITED_FILE) -> list[str]:
+        if not os.path.exists(path):
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
