@@ -225,7 +225,6 @@ def main():
     rate = saved / elapsed if elapsed > 0 else 0.0
     logger.info(
         f"[crawler] concluido: {saved} paginas em {elapsed:.1f}s ({rate:.1f} pages/s)",
-        file=sys.stderr,
     )
 
 
