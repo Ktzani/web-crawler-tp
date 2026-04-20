@@ -13,7 +13,7 @@ dentro. Complementa o `README.md` (que é focado em uso).
                              │ get_next() / release_host()
                              ▼
          ┌─────────────┬─────────────┬─────────────┐
-         │  Worker 1   │  Worker 2   │   Worker N  │   (64 threads)
+         │  Worker 1   │  Worker 2   │   Worker N  │   (16 threads default)
          └──────┬──────┴──────┬──────┴──────┬──────┘
                 │             │             │
                 ▼             ▼             ▼
@@ -34,34 +34,45 @@ dentro. Complementa o `README.md` (que é focado em uso).
          │  WarcStorage  │    │   Frontier   │
          │  1000/arquivo │    │  (re-enqueue │
          │  gzip         │    │   outlinks)  │
-         └───────────────┘    └──────────────┘
+         │  + visited.txt│    └──────────────┘
+         └───────┬───────┘
                  │
                  ▼
          ┌───────────────┐
-         │    Metrics    │  snapshot a cada 5s → CSV
+         │    Metrics    │  snapshot a cada 30s → CSV
          └───────────────┘
 ```
 
-Em uma frase: **seeds alimentam uma fila por host; 64 threads consomem
-em paralelo; cada página baixada vai pro WARC e seus links voltam
-pra fila. Tudo respeitando `robots.txt` e delay ≥ 100ms por host.**
+Em uma frase: **seeds alimentam uma fila por host; N threads consomem
+em paralelo; cada página baixada vai pro WARC (e pro log `visited.txt`)
+e seus links voltam pra fila. Tudo respeitando `robots.txt` e delay
+≥ 100ms por host.**
 
 ## Módulos
 
 | Módulo | Pacote | Responsabilidade |
 |---|---|---|
 | `crawler.py` | raiz | Entry point: CLI, threads, orquestração |
-| `config.py` | `src/` | Constantes centralizadas |
+| `filters.py` | `src/config/` | Schemes aceitos, extensões e MIMEs não-HTML |
+| `network.py` | `src/config/` | User-Agent, `HTTP_TIMEOUT`, `MAX_PAGE_SIZE` |
+| `parallelism.py` | `src/config/` | `NUM_THREADS`, `METRICS_INTERVAL`, `METRICS_FILE` |
+| `politeness.py` | `src/config/` | `DEFAULT_CRAWL_DELAY`, `MAX_PAGES_PER_HOST`, `MAX_QUEUE_PER_HOST` |
+| `storage.py` (config) | `src/config/` | `PAGES_PER_WARC`, `WARC_DIR`, `VISITED_FILE` |
 | `frontier.py` | `src/core/` | Fila de URLs com politeness por host |
-| `robots.py` | `src/net/` | Cache thread-safe de `robots.txt` |
-| `fetcher.py` | `src/net/` | HTTP GET com validação de MIME |
+| `robots.py` | `src/network/` | Cache thread-safe de `robots.txt` |
+| `fetcher.py` | `src/network/` | HTTP GET com validação de MIME |
 | `url_utils.py` | `src/content/` | Normalização e filtros de URL |
 | `parser.py` | `src/content/` | Extração de título, texto e outlinks |
-| `storage.py` | `src/output/` | Escrita de WARCs rotativos |
+| `storage.py` | `src/output/` | Escrita de WARCs rotativos + log `visited.txt` |
 | `metrics.py` | `src/output/` | Snapshot periódico em CSV |
+| `speedup_experiment.py` | `src/test/` | Varia `NUM_THREADS`, mede tempo, gera `speedup.csv` |
+| `extract_corpus.py` | `src/test/` | Expande WARC em arquivos `.html` para inspeção |
+| `base_validation.py` | `src/test/` | Validação rápida do corpus gerado |
 
-O agrupamento reflete as camadas: `net/` lida com rede, `content/` com
-processamento, `output/` com persistência, `core/` com o motor.
+O agrupamento reflete as camadas: `network/` lida com rede, `content/`
+com processamento, `output/` com persistência, `core/` com o motor,
+`config/` com constantes (agora quebrado em 5 arquivos por tema),
+e `test/` com utilitários fora do caminho do crawl.
 
 ## Estruturas de dados
 
@@ -77,11 +88,17 @@ processamento, `output/` com persistência, `core/` com o motor.
 
 Onde `H` = número de hosts distintos.
 
-**Por que fila por host e não FIFO global?** Com FIFO global e 64
-threads, uma sequência de 500 URLs do mesmo host bloquearia 499 threads
-esperando o delay de politeness. Com fila por host + heap ordenada por
-`next_time`, cada thread sempre pega o host mais pronto — nenhuma
-thread fica travada enquanto existe trabalho em outros hosts.
+**Por que fila por host e não FIFO global?** Com FIFO global e várias
+threads, uma sequência de 500 URLs do mesmo host bloquearia todas as
+threads esperando o delay de politeness. Com fila por host + heap
+ordenada por `next_time`, cada thread sempre pega o host mais pronto —
+nenhuma thread fica travada enquanto existe trabalho em outros hosts.
+
+**Retomada após crash.** O frontier expõe `load_visited()` e
+`mark_visited(urls)`: na inicialização com `-r`, o crawler lê
+`data/visited.txt`, marca todas as URLs como vistas (elas nunca serão
+re-enfileiradas) e ajusta o contador inicial do `WarcStorage` via
+`set_initial_count(len(visited))`.
 
 ### RobotsCache
 
@@ -97,36 +114,42 @@ por arquivo. O arquivo ativo é trocado dentro do `store()` quando
 `current_count >= PAGES_PER_WARC`. Um único lock serializa as escritas
 — disk I/O não é gargalo comparado a rede.
 
+Além do WARC, `WarcStorage` mantém um log append-only em
+`data/visited.txt` — uma linha por URL processada. Abre em modo `a` sob
+`-r` (append) ou `w` (sobrescrever) no modo fresh, com `fsync` a cada
+`VISITED_FSYNC_EVERY = 50` páginas para sobreviver a quedas.
+
 ### Metrics
 
 Contadores cumulativos (`pages_failed`, `bytes_downloaded`) protegidos
-por `Lock`. Uma thread dedicada dorme em `stop_event.wait(timeout=5)` e
-escreve uma linha no CSV a cada snapshot.
+por `Lock`. Uma thread dedicada dorme em `stop_event.wait(timeout=30)`
+e escreve uma linha no CSV a cada snapshot (`METRICS_INTERVAL = 30s`).
 
 ## Fluxo de execução
 
 ### Inicialização (em `crawler.py`)
 
-1. Parseia CLI via `argparse`
-2. Lê seeds (linha por linha, comentários `#` ignorados)
-3. Instancia `RobotsCache`, `Frontier`, `WarcStorage`, `Metrics`
-4. Enfileira cada seed via `frontier.add(url)`
-5. `metrics.start()` dispara thread de snapshot
-6. Cria `NUM_THREADS` workers e faz `join()` em todas
+1. Parseia CLI via `argparse` (`-s`, `-n`, `-d`, `-r`)
+2. Lê seeds: aceita arquivo único ou diretório (concatena todos os `.txt`)
+3. Instancia `RobotsCache`, `Frontier`, `WarcStorage(resume=args.resume)`, `Metrics`
+4. Se `-r`: carrega `visited.txt`, marca URLs no frontier, ajusta contador do storage
+5. Enfileira cada seed via `frontier.add(url)`
+6. `metrics.start()` dispara thread de snapshot
+7. Cria `NUM_THREADS` workers; join loop tolerante a Ctrl+C
 
 ### Loop do worker
 
 ```python
 while not stop_event.is_set():
-    url = frontier.get_next(stop_event)     # bloqueia se precisar
+    url, _ = frontier.get_next(stop_event)  # bloqueia se precisar
     if url is None: return                  # fim de trabalho
     try:
         result = fetch(url)                 # HTTP GET
         if not result.ok:
             metrics.record_failure()
             continue
-        parsed = parse_html(result.raw_bytes, result.final_url)
-        if storage.store(result):
+        parsed = parse_html(result.raw_bytes.decode(...), result.final_url)
+        if storage.store(result):           # grava WARC + appenda visited.txt
             metrics.record_success(len(result.raw_bytes))
             if debug: print(json_record)
             if storage.total_saved() >= limit:
@@ -150,10 +173,11 @@ while not stop_event.is_set():
 
 ### Parada
 
-1. Uma thread atinge o limite e seta o event
+1. Uma thread atinge o limite e seta o event (ou o usuário aperta Ctrl+C)
 2. As outras threads veem o event no próximo loop e retornam
-3. `metrics.close()` aguarda o último snapshot e fecha o CSV
-4. `storage.close()` fecha o WARC atual
+3. Em Ctrl+C há um deadline de 10s antes de forçar shutdown
+4. `storage.close()` faz o `fsync` final de `visited.txt` e fecha o WARC
+5. `metrics.close()` aguarda o último snapshot e fecha o CSV
 
 ## Concorrência
 
@@ -164,14 +188,14 @@ while not stop_event.is_set():
 | `Frontier._lock` (Condition) | Estruturas do frontier | Único |
 | `RobotsCache._lock` | Dict `_cache` | Único |
 | `RobotsCache._host_locks[h]` | Fetch de robots.txt de 1 host | Por host |
-| `WarcStorage._lock` | Writer WARC atual | Único |
+| `WarcStorage._lock` | Writer WARC atual + visited.txt | Único |
 | `Metrics._lock` | Contadores | Único |
 
 ### Padrões de concorrência
 
 **Double-checked locking (RobotsCache).** Checa cache sem lock pesado;
 se miss, pega o lock **do host** (não global) pra baixar; re-checa
-dentro do lock antes de efetivamente baixar. Evita que 64 threads
+dentro do lock antes de efetivamente baixar. Evita que várias threads
 interessadas em hosts diferentes se bloqueiem mutuamente.
 
 **Lazy deletion (Frontier heap).** Ao atualizar `next_time[host]`, não
@@ -189,7 +213,7 @@ reaproveitar conexões TCP (keep-alive) dentro daquela thread.
 - O enunciado pede paralelização por threads explicitamente
 - `requests` (requirement) é síncrono — `aiohttp` exigiria outra lib
 - Overhead do GIL é irrelevante aqui: I/O de rede libera o GIL
-- 64 threads para I/O-bound é escala gerenciável sem complexidade
+- Threads para I/O-bound é escala gerenciável sem complexidade
 
 ## Conformidade com as políticas do enunciado
 
@@ -197,6 +221,7 @@ reaproveitar conexões TCP (keep-alive) dentro daquela thread.
 
 **Dois níveis:**
 1. **Pré-fetch:** `has_non_html_extension()` rejeita `.pdf`, `.jpg`, etc.
+   Lista em `src/config/filters.py`.
 2. **Pós-fetch:** `fetch()` lê o header `Content-Type` antes do body
    (via `stream=True`) e rejeita não-HTML.
 
@@ -207,11 +232,15 @@ de enfileirar uma URL nova, ela é normalizada (remoção de fragment,
 lowercase no host, porta default, percent-encoding canônico) e testada
 no set. Lookup O(1).
 
+Para sobreviver a quedas de conexão, URLs processadas são persistidas
+em `data/visited.txt` e re-carregadas no início via `-r`.
+
 ### 3. Parallelization Policy
 
-- `NUM_THREADS = 64` (em `src/config.py`)
+- `NUM_THREADS = 16` (default em `src/config/parallelism.py`)
 - Crawling é I/O-bound: >95% do tempo é espera de rede
-- 64 threads saturam banda doméstica sem serem rejeitadas como abusivas
+- `src/test/speedup_experiment.py` automatiza a variação de threads
+  para gerar o speedup CSV exigido no relatório
 
 ### 4. Politeness Policy
 
@@ -231,6 +260,7 @@ no set. Lookup O(1).
 - Rotação a cada 1000 páginas → 100 arquivos para 100k
 - Dois registros por página: `request` + `response` (padrão Heritrix/IA)
 - Amarrados via header `WARC-Concurrent-To`
+- Saída em `data/corpus/corpus-NNNNN.warc.gz`
 
 ## Decisões de design
 
@@ -238,6 +268,13 @@ no set. Lookup O(1).
 **Escolhida:** fila por host com heap.
 **Razão:** FIFO global sofre de thread starvation quando várias URLs
 seguidas são do mesmo host.
+
+### Config único vs. pacote `config/`
+**Escolhida:** pacote `src/config/` com 5 arquivos temáticos
+(`filters`, `network`, `parallelism`, `politeness`, `storage`).
+**Razão:** o arquivo único crescia demais e misturava assuntos
+ortogonais. Quebrar por tema facilita o ajuste direcionado (ex:
+experimentos de speedup só tocam `parallelism.py`).
 
 ### Lock único vs. locks finos no Frontier
 **Escolhida:** um `Lock` + `Condition` para todo o Frontier.
@@ -253,6 +290,12 @@ lento mas suficiente — o bottleneck é rede, não parsing.
 **Escolhida:** por URL normalizada.
 **Razão:** o enunciado fala em "URL previamente crawleada", não em
 conteúdo duplicado. Dedup por conteúdo seria outra política.
+
+### Persistência de visitados em arquivo texto
+**Escolhida:** append-only `data/visited.txt` (uma URL por linha).
+**Razão:** formato trivialmente inspeccionável com `wc -l`, `grep`,
+etc.; append + `fsync` periódico é resistente a crash e barato.
+Carregar no start é O(N) linhas, aceitável para 100k URLs.
 
 ### Limite de páginas por host
 **Escolhida:** `MAX_PAGES_PER_HOST = 5000` (não exigido).
@@ -272,7 +315,8 @@ número médio de outlinks por página:
 | Dedup (`url in seen`) | O(1) |
 | Fetch HTTP | O(tamanho da página), dominado por rede |
 | Parse HTML | O(tamanho do HTML) |
-| Escrita WARC | O(tamanho da página) |
+| Escrita WARC + append visited | O(tamanho da página) |
+| Load visited no resume | O(V) lido uma vez no start |
 | **Total** | **O(N × (log H + L))**, dominado pela rede |
 
 Espaço: O(N) para o set `_seen` + O(outlinks pendentes) para as queues.

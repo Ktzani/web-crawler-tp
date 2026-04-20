@@ -6,23 +6,25 @@ corpus. Segue a ordem recomendada — cada etapa depende da anterior.
 ## Pré-requisitos
 
 - **Python 3.14** instalado (`python3 --version`)
-- **Sistema operacional:** Linux, macOS ou WSL. No Windows nativo, os
-  paths de arquivo podem exigir ajuste.
+- **Sistema operacional:** Linux, macOS, WSL ou Windows nativo. Os
+  caminhos padrão usam `/` e funcionam nos três — os comandos abaixo
+  trazem a variante PowerShell quando relevante.
 - **Conexão de internet estável** — o crawl completo dura horas.
-- **Espaço em disco:** ~2–5 GB para o corpus de 100k páginas.
+- **Espaço em disco:** ~2–5 GB para o corpus de 100k páginas em
+  `data/corpus/`.
 
 ## Etapa 1 — Setup do ambiente
 
 ```bash
-cd pa1-crawler
+cd web-crawler-tp
 
-# Cria e ativa um virtualenv chamado pa1
+# Cria o virtualenv
 python3 -m venv .venv
 
-# Linux
+# Linux / macOS / WSL
 source .venv/bin/activate
 
-# Windows 
+# Windows (PowerShell)
 .\.venv\Scripts\Activate.ps1
 
 # Instala exatamente as libs do requirements.txt
@@ -39,84 +41,102 @@ Se imprimir `OK`, as dependências estão instaladas.
 
 ## Etapa 2 — Preparar as seeds
 
-As seeds vão em `seeds/seeds-<matricula>.txt`, uma URL por linha.
+As seeds vão em `seeds/seeds-<matricula>.txt`, uma URL por linha. O
+repositório já traz dezenas de arquivos em `seeds/` — você pode
+apontar o crawler para um único arquivo ou para o diretório inteiro
+(ele concatena todos os `.txt` e deduplica).
 
 ```bash
 cat > seeds/seeds-2017114124.txt << 'EOF'
 https://ucla.edu/
 https://whitehouse.gov/
 https://estrategiaconcursos.com.br/
-# ... mais 47 URLs
+# ... mais URLs
 EOF
 ```
 
 **Dicas para escolher boas seeds:**
 
-- **Diversidade é crucial:** 50 seeds de portais grandes (jornais,
+- **Diversidade é crucial:** seeds de portais grandes (jornais,
   universidades, governos, e-commerces) expandem rapidamente
 - **Evite domínios isolados** (blogs pessoais com poucos links externos)
 - **Misture idiomas/países** para aumentar cobertura
 - **Linhas começando com `#` são comentários** e são ignoradas
 - Linhas em branco também são ignoradas
 
-## Etapa 3 — Teste rápido (100 páginas)
+## Etapa 3 — Teste rápido (10 páginas)
 
 Antes de começar o crawl de 100k, **sempre** valide com um crawl pequeno.
 Isso garante que seeds, rede e ambiente estão funcionando.
 
 ```bash
+# Linux / macOS / WSL
 python3 crawler.py -s seeds/seeds-2017114124.txt -n 10 -d > data/logs/crawl-test.jsonl
-ou 
-.\.venv\Scripts\python.exe
+
+# Windows (PowerShell)
+.\.venv\Scripts\python.exe crawler.py -s seeds\seeds-2017114124.txt -n 10 -d `
+    > data\logs\crawl-test.jsonl
 ```
 
 **O que esperar:**
 
-- `stderr` com linhas `[crawler] ...` de progresso
+- `stderr` com linhas `[crawler] ...` de progresso (via `logging`)
 - `stdout` com JSON por página (modo `-d`) — redirecione para arquivo
   se quiser inspecionar
-- No final: mensagem `[crawler] concluido: 100 paginas em X.Xs`
-- Um arquivo em `corpus/corpus-00000.warc.gz` (~1–5 MB)
-- Um CSV em `logs/metrics.csv`
+- No final: mensagem `[crawler] concluido: 10 paginas em X.Xs`
+- Um arquivo em `data/corpus/corpus-00000.warc.gz` (~centenas de KB)
+- Um CSV em `data/logs/metrics.csv`
+- Um log `data/visited.txt` com uma URL por linha
 
 **Tempo esperado:** 30 segundos a 2 minutos, dependendo da latência dos
 sites.
 
 **Se algo der errado:**
 
-- **Nenhuma página baixada** → veja `crawl-test.log`; geralmente é seeds
-  inválidas ou rede bloqueada
-- **Muitas falhas (`pages_failed` alto em `logs/metrics.csv`)** →
+- **Nenhuma página baixada** → veja o log em `data/logs/`; geralmente é
+  seeds inválidas ou rede bloqueada
+- **Muitas falhas (`pages_failed` alto em `data/logs/metrics.csv`)** →
   normal para alguns sites; se for a maioria, investigue firewall/DNS
-- **Erro de import** → você não ativou o virtualenv (`source pa1/bin/activate`)
+- **Erro de import** → você não ativou o virtualenv
 
 ## Etapa 4 — Ajustar parâmetros (opcional)
 
-Edite `src/config.py` se quiser ajustar:
+A config foi quebrada em 5 arquivos dentro de `src/config/`, por tema:
 
-```python
-NUM_THREADS = 64               # mais threads = mais rápido, até saturar
-MAX_PAGES_PER_HOST = 5000      # limita dominio único no corpus
-MAX_PAGE_SIZE = 2 * 1024 * 1024  # 2 MB (limite por página)
-DEFAULT_CRAWL_DELAY = 0.1       # 100ms, mínimo do enunciado
-```
+| Arquivo | Conteúdo típico |
+|---|---|
+| `parallelism.py` | `NUM_THREADS` (default 16), `METRICS_INTERVAL = 30s`, `METRICS_FILE` |
+| `network.py` | `USER_AGENT`, `HTTP_TIMEOUT`, `MAX_PAGE_SIZE` |
+| `politeness.py` | `DEFAULT_CRAWL_DELAY`, `MAX_PAGES_PER_HOST`, `MAX_QUEUE_PER_HOST`, `ROBOTS_TIMEOUT` |
+| `filters.py` | `ALLOWED_SCHEMES`, `NON_HTML_EXTENSIONS`, prefixos de Content-Type HTML |
+| `storage.py` | `PAGES_PER_WARC`, `WARC_DIR`, `WARC_PREFIX`, `VISITED_FILE`, `VISITED_FSYNC_EVERY` |
 
-**Recomendação:** começar com o default. Só ajuste depois de observar o
-comportamento no teste da Etapa 3.
+**Recomendação:** começar com os defaults. Só ajuste depois de observar
+o comportamento no teste da Etapa 3.
 
 ## Etapa 5 — Crawl completo (100.000 páginas)
 
 ```bash
 # Limpa corpus anterior se quiser recomeçar do zero
-rm -rf corpus/*.warc.gz logs/metrics.csv
+rm -rf data/corpus/*.warc.gz data/logs/metrics.csv data/visited.txt
 
 # Dispara o crawl completo. SEM -d para não encher o terminal.
 # Redireciona stderr para um log de progresso.
-python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 2> logs/crawl.log &
+python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 2> data/logs/crawl.log &
 
-# Acompanha o progresso em outro terminal (ou mesmo, com tail)
-tail -f logs/crawl.log
+# Acompanha o progresso em outro terminal
+tail -f data/logs/crawl.log
 ```
+
+**Se a conexão cair no meio do caminho**, retome com `-r`:
+
+```bash
+python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 -r 2>> data/logs/crawl.log
+```
+
+O `-r` lê `data/visited.txt`, marca todas as URLs já processadas como
+"visto" no frontier e ajusta o contador do storage — ou seja, o crawl
+continua de onde parou sem re-baixar nada.
 
 **Tempo esperado:** 2–6 horas, dependendo de:
 - Diversidade das seeds (mais diverso = mais rápido)
@@ -125,42 +145,47 @@ tail -f logs/crawl.log
 
 **Monitoramento:**
 
-- `logs/metrics.csv` atualiza a cada 5s — dá pra plotar em tempo real
-- `ls corpus/ | wc -l` mostra quantos WARCs já foram fechados
-- Ctrl+C faz shutdown limpo (grava tudo que já foi baixado)
+- `data/logs/metrics.csv` atualiza a cada 30s — dá pra plotar em tempo real
+- `ls data/corpus/ | wc -l` mostra quantos WARCs já foram fechados
+- `wc -l data/visited.txt` mostra quantas URLs já foram processadas
+- Ctrl+C faz shutdown limpo (deadline de 10s, grava tudo que já baixou)
 
-**Ao final:** 100 arquivos `corpus-00000.warc.gz` a `corpus-00099.warc.gz`,
-totalizando ~2–5 GB.
+**Ao final:** 100 arquivos `corpus-00000.warc.gz` a `corpus-00099.warc.gz`
+em `data/corpus/`, totalizando ~2–5 GB.
 
-## Etapa 6 — Experimentos de speedup (para o relatório)
+## Etapa 6 — Experimentos de speedup
 
-O relatório pede medição de speedup com N threads variável. Faça rodadas
-com `-n` menor (ex: 2000 páginas) variando `NUM_THREADS`:
+Já existe um script pronto em `src/test/speedup_experiment.py` que
+automatiza a variação de `NUM_THREADS` (ele patcha temporariamente
+`src/config/parallelism.py` e restaura no final):
 
 ```bash
-# Para cada valor de threads, edita config.py e roda
-for N in 1 4 16 32 64 128; do
-    # Edita NUM_THREADS em src/config.py (manual ou com sed)
-    sed -i "s/^NUM_THREADS = .*/NUM_THREADS = $N/" src/config.py
-
-    rm -rf corpus/* logs/metrics.csv
-    time python3 crawler.py -s seeds/seeds-2017114124.txt -n 2000 \
-        2> logs/crawl-threads-$N.log
-
-    # Guarda os resultados para análise
-    cp logs/metrics.csv logs/metrics-threads-$N.csv
-done
+python3 src/test/speedup_experiment.py \
+    --seeds seeds/seeds-2017114124.txt \
+    --limit 2000 \
+    --runs 3 \
+    --threads 1,2,4,8,16,32,64
 ```
 
-**Ao final:** 6 CSVs em `logs/metrics-threads-*.csv`. O speedup é
-calculado como `tempo(1 thread) / tempo(N threads)`.
+**Saída:** `data/logs/speedup.csv` com colunas
+`num_threads, run, elapsed_sec, pages_saved, pages_per_sec`.
+
+O speedup é calculado como `tempo(1 thread) / tempo(N threads)`.
 
 ## Etapa 7 — Caracterização do corpus
 
 O relatório pede: número de domínios únicos, distribuição de páginas
 por domínio, distribuição de tokens por página.
 
-Crie um notebook `analysis/characterize.ipynb` com algo como:
+Para facilitar a inspeção manual, use `src/test/extract_corpus.py` para
+expandir os WARCs em arquivos `.html` individuais em `data/extracted/`:
+
+```bash
+python3 src/test/extract_corpus.py --corpus-dir data/corpus --out-dir data/extracted
+```
+
+Para a caracterização propriamente dita, crie um notebook em
+`data/analysis/characterize.ipynb` com algo como:
 
 ```python
 import os
@@ -169,7 +194,7 @@ from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 from collections import Counter
 
-corpus_dir = "corpus"
+corpus_dir = "data/corpus"
 hosts = Counter()
 tokens_per_page = []
 
@@ -192,17 +217,17 @@ for filename in sorted(os.listdir(corpus_dir)):
 
 print(f"Domínios únicos: {len(hosts)}")
 print(f"Páginas totais: {sum(hosts.values())}")
-print(f"Top-10 domínios:")
+print("Top-10 domínios:")
 for host, count in hosts.most_common(10):
     print(f"  {host}: {count}")
 ```
 
-Gere 3 gráficos (use `matplotlib` — **instalar fora do venv `pa1`** para
-não contaminar o ambiente do crawler):
+Gere 3 gráficos (use `matplotlib` — instale fora do `.venv` do crawler
+para não contaminar o ambiente):
 
 1. **Histograma de páginas por domínio** (log-log, mostra cauda longa)
 2. **Histograma de tokens por página** (distribuição do tamanho)
-3. **Download rate ao longo do tempo** (a partir de `logs/metrics.csv`)
+3. **Download rate ao longo do tempo** (a partir de `data/logs/metrics.csv`)
 
 ## Etapa 8 — Empacotar para entrega
 
@@ -213,8 +238,8 @@ não contaminar o ambiente do crawler):
 # Monta o zip de entrega (código + relatório, sem o corpus)
 zip -r entrega.zip \
     crawler.py requirements.txt README.md \
-    src/ seeds/ docs/ analysis/ \
-    -x "corpus/*" "logs/*" "__pycache__/*" "*.pyc" "pa1/*"
+    src/ seeds/ docs/ \
+    -x "data/*" "__pycache__/*" "*.pyc" ".venv/*"
 ```
 
 O pacote final deve conter:
@@ -228,19 +253,22 @@ O pacote final deve conter:
 | Sintoma | Causa provável | Solução |
 |---|---|---|
 | `ModuleNotFoundError: src` | Rodando de dentro do `src/` | Sempre rode da raiz do projeto |
-| `ModuleNotFoundError: requests` | Venv não ativado | `source pa1/bin/activate` |
-| Crawler "trava" nas primeiras URLs | Seeds com `robots.txt` bloqueando | Normal se seeds bloqueiam o bot; verifique `robots.txt` dos sites |
-| Muitas páginas com `timeout` | Conexão lenta ou sites pesados | Aumentar `HTTP_TIMEOUT` em `config.py` |
-| `MemoryError` ou OOM | Frontier gigante demais | Reduzir `MAX_QUEUE_PER_HOST` |
+| `ModuleNotFoundError: requests` | Venv não ativado | Reative o `.venv` |
+| Crawler "trava" nas primeiras URLs | Seeds com `robots.txt` bloqueando | Normal; verifique `robots.txt` dos sites |
+| Muitas páginas com `timeout` | Conexão lenta ou sites pesados | Aumentar `HTTP_TIMEOUT` em `src/config/network.py` |
+| `MemoryError` ou OOM | Frontier gigante demais | Reduzir `MAX_QUEUE_PER_HOST` em `src/config/politeness.py` |
 | Crawl rápido demais, poucas páginas | Seeds muito restritas | Aumentar número de seeds ou diversidade |
-| WARC corrompido | Crash durante escrita | Usar Ctrl+C ao parar, nunca `kill -9` |
+| WARC corrompido | Crash durante escrita | Use Ctrl+C ao parar, nunca `kill -9` |
+| Conexão caiu durante crawl | Rede instável | Rode de novo com `-r` para continuar de onde parou |
 
 ## Limpeza
 
 Para começar do zero (mantém código, descarta dados):
 
 ```bash
-rm -rf corpus/*.warc.gz
-rm -rf logs/*.csv logs/*.log
+rm -rf data/corpus/*.warc.gz
+rm -rf data/logs/*.csv data/logs/*.log
+rm -f data/visited.txt
+rm -rf data/extracted/*
 find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null
 ```
