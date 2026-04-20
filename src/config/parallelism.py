@@ -8,7 +8,7 @@ Configuracoes de paralelismo e coleta de metricas.
 # eh espera de rede), entao o numero de threads pode ser bem maior que
 # o numero de cores da CPU. 64 eh um bom default para saturar a banda
 # sem abusar dos servidores alvo.
-NUM_THREADS = 1
+NUM_THREADS = 16
 
 # Intervalo (em segundos) entre snapshots de metricas no CSV.
 METRICS_INTERVAL = 5.0

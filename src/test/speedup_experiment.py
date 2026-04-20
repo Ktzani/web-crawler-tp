@@ -65,18 +65,20 @@ def run_one(seeds: str, limit: int) -> tuple[float, int]:
     Lê o stderr do crawler procurando a linha "concluido: X paginas em Ys".
     """
     # Limpa corpus e logs para nao contaminar entre rodadas
-    for d in ["corpus", "logs"]:
+    for d in ["data/corpus", "data/logs"]:
         if os.path.isdir(d):
             for f in os.listdir(d):
                 os.remove(os.path.join(d, f))
 
     t_start = time.time()
-    result = subprocess.run(
-        [sys.executable, "crawler.py", "-s", seeds, "-n", str(limit)],
-        capture_output=True,
-        text=True,
-        timeout=limit * 2,  # timeout generoso: 2s por pagina no maximo
-    )
+    with open("data/logs/debug.jsonl", "w") as debug_file:
+        result = subprocess.run(
+            [sys.executable, "crawler.py", "-s", seeds, "-n", str(limit), "-d"],
+            stdout=debug_file,           # stdout vai DIRETO pro arquivo
+            stderr=subprocess.PIPE,      # stderr ainda capturado (usado pro parse)
+            text=True,
+            timeout=limit * 4,
+        )
     t_elapsed = time.time() - t_start
 
     # Tenta extrair o "X paginas em Ys" do stderr
