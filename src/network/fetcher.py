@@ -14,7 +14,8 @@ from dataclasses import dataclass
 
 import requests
 
-from src.config import USER_AGENT, HTTP_TIMEOUT, MAX_PAGE_SIZE, HTML_CONTENT_TYPES
+from src.config.network import USER_AGENT, HTTP_TIMEOUT, MAX_PAGE_SIZE
+from src.config.filters import HTML_CONTENT_TYPES
 
 
 # Session por thread: keep-alive aumenta muito a performance. Session NAO

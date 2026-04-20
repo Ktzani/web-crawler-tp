@@ -25,13 +25,13 @@ import threading
 import time
 from collections import deque
 
-from src.config import (
+from src.config.politeness import (
     DEFAULT_CRAWL_DELAY,
     MAX_PAGES_PER_HOST,
     MAX_QUEUE_PER_HOST,
 )
 from src.content.url_utils import get_host, is_valid_for_crawling
-from src.net.robots import RobotsCache
+from src.network.robots import RobotsCache
 
 
 _EMPTY = (None, None)

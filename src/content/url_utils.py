@@ -8,7 +8,7 @@ e filtros de escopo (scheme, extensao).
 from urllib.parse import urlparse, urljoin, urldefrag
 from url_normalize import url_normalize
 
-from src.config import ALLOWED_SCHEMES, NON_HTML_EXTENSIONS
+from src.config.filters import ALLOWED_SCHEMES, NON_HTML_EXTENSIONS
 
 
 def normalize_url(url: str) -> str | None:

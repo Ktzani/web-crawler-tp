@@ -10,8 +10,7 @@ import os
 import threading
 import time
 
-from src.config import METRICS_INTERVAL
-
+from src.config.parallelism import METRICS_INTERVAL
 
 class Metrics:
     """
@@ -21,8 +20,11 @@ class Metrics:
     contagem; aqui trackeamos apenas pages_failed e bytes_downloaded.
     """
 
-    def __init__(self, output_path: str = "logs/metrics.csv",
-                 interval: float = METRICS_INTERVAL):
+    def __init__(
+        self, 
+        output_path: str = "logs/metrics.csv", 
+        interval: float = METRICS_INTERVAL
+    ):
         self._output_path = output_path
         self._interval = interval
 

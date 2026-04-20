@@ -18,8 +18,9 @@ from urllib.parse import urlparse
 from warcio.warcwriter import WARCWriter
 from warcio.statusandheaders import StatusAndHeaders
 
-from src.config import PAGES_PER_WARC, WARC_DIR, WARC_PREFIX, USER_AGENT
-from src.net.fetcher import FetchResult
+from src.config.network import USER_AGENT
+from src.config.storage import PAGES_PER_WARC, WARC_DIR, WARC_PREFIX
+from src.network.fetcher import FetchResult
 
 
 class WarcStorage:

@@ -17,7 +17,8 @@ from urllib.parse import urlparse
 import requests
 from protego import Protego
 
-from src.config import USER_AGENT, ROBOTS_TIMEOUT, DEFAULT_CRAWL_DELAY
+from src.config.network import USER_AGENT
+from src.config.politeness import ROBOTS_TIMEOUT, DEFAULT_CRAWL_DELAY
 from src.content.url_utils import get_host
 
 

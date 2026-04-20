@@ -26,10 +26,10 @@ import time
 # Garante que 'src/' eh encontrado independente de onde rodamos o script.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.config import NUM_THREADS, METRICS_FILE
+from src.config.parallelism import NUM_THREADS, METRICS_FILE
 from src.core.frontier import Frontier
-from src.net.robots import RobotsCache
-from src.net.fetcher import fetch
+from src.network.robots import RobotsCache
+from src.network.fetcher import fetch
 from src.content.parser import parse_html
 from src.output.storage import WarcStorage
 from src.output.metrics import Metrics
