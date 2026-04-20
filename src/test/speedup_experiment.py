@@ -133,8 +133,6 @@ def main():
         print(f"Limite:  {args.limit} paginas/rodada")
         print(f"Threads: {thread_levels}")
         print(f"Rodadas: {args.runs} por nivel = {total_runs} total")
-        print(f"Tempo estimado: ~{total_runs * args.limit / 30 / 60:.0f} min (pessimista)")
-        print()
 
         for n_threads in thread_levels:
             # Aplica o valor dessa rodada
