@@ -122,7 +122,7 @@ rm -rf data/corpus/*.warc.gz data/logs/metrics.csv data/visited.txt
 
 # Dispara o crawl completo. SEM -d para não encher o terminal.
 # Redireciona stderr para um log de progresso.
-python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 2> data/logs/crawl.log &
+python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 2> data/logs/crawl.log
 
 # Acompanha o progresso em outro terminal
 tail -f data/logs/crawl.log

@@ -23,8 +23,6 @@ from warcio.statusandheaders import StatusAndHeaders
 from src.config.network import USER_AGENT
 from src.config.storage import (
     PAGES_PER_WARC,
-    VISITED_FILE,
-    VISITED_FSYNC_EVERY,
     WARC_DIR,
     WARC_PREFIX,
 )
@@ -43,14 +41,11 @@ class WarcStorage:
         self,
         output_dir: str = WARC_DIR,
         prefix: str = WARC_PREFIX,
-        visited_path: str = VISITED_FILE,
         resume: bool = False,
     ):
         self._dir = output_dir
         self._prefix = prefix
-        self._visited_path = visited_path
         os.makedirs(self._dir, exist_ok=True)
-        os.makedirs(os.path.dirname(visited_path) or ".", exist_ok=True)
 
         # Lock serializa escritas. Escrita em disco eh muito mais rapida
         # que I/O de rede, entao esse lock nao vira gargalo.
@@ -62,7 +57,6 @@ class WarcStorage:
         self._current_file_index = 0
         self._current_count = 0
         self._total_saved = 0
-        self._since_fsync = 0
 
         last = self._last_warc(self._dir, prefix)
         if resume and last is not None:
@@ -77,9 +71,6 @@ class WarcStorage:
             # indice para nao sobrescrever silenciosamente. Quem quiser comecar
             # do zero deve apagar o diretorio antes.
             self._current_file_index = last[0] + 1
-
-        mode = "ab" if resume else "wb"
-        self._visited_log = open(visited_path, mode, buffering=0)
         
     def set_initial_count(self, count: int):
         """Ajusta contador para execucoes que retomam crawls anteriores."""
@@ -98,12 +89,6 @@ class WarcStorage:
             self._write_pair(result)
             self._current_count += 1
             self._total_saved += 1
-
-            self._visited_log.write((result.final_url + "\n").encode("utf-8"))
-            self._since_fsync += 1
-            if self._since_fsync >= VISITED_FSYNC_EVERY:
-                os.fsync(self._visited_log.fileno())
-                self._since_fsync = 0
             return True
 
     def total_saved(self) -> int:
@@ -116,14 +101,6 @@ class WarcStorage:
                 self._current_file.close()
                 self._current_file = None
                 self._current_writer = None
-                
-            if self._visited_log is not None:
-                try:
-                    os.fsync(self._visited_log.fileno())
-                except OSError:
-                    pass
-                self._visited_log.close()
-                self._visited_log = None
 
     def _rotate(self):
         """Fecha o WARC atual (se houver) e abre o proximo."""

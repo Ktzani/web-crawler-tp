@@ -37,10 +37,10 @@ python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000
 python3 crawler.py -s seeds/seeds-2017114124.txt -n 10 -d > debug.jsonl
 
 # Retomar depois de queda de conexao
-python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 -r
+python3 crawler.py -s seeds/seeds-2017114124.txt -n 100000 -r -d > debug.jsonl
 
 # Usar um diretorio inteiro de seeds (concatena todos os .txt)
-python3 crawler.py -s seeds/ -n 100000
+python3 crawler.py -s seeds/ -n 100000 -d > debug.jsonl
 ```
 
 ## Estrutura
@@ -69,8 +69,7 @@ web-crawler-tp/
 │   │   └── metrics.py       # snapshot periodico em CSV
 │   └── test/
 │       ├── speedup_experiment.py  # varia NUM_THREADS e mede tempo
-│       ├── extract_corpus.py      # WARC → arquivos .html individuais
-│       └── base_validation.py     # validacao rapida do corpus
+│       └── extract_corpus.py      # WARC → arquivos .html individuais
 ├── seeds/                   # arquivos de seed URLs
 ├── data/                    # artefatos (runtime)
 │   ├── corpus/              # WARCs gerados
@@ -78,7 +77,7 @@ web-crawler-tp/
 │   ├── extracted/           # HTMLs extraidos (opcional)
 │   ├── analysis/            # notebooks de caracterizacao
 │   └── visited.txt          # log append-only de URLs processadas
-└── docs/                    # ARCHITECTURE.md, PIPELINE.md, relatorio
+└── docs/                    # ARCHITECTURE.md, PIPELINE.md
 ```
 
 ## Saida

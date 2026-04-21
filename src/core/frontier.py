@@ -32,7 +32,7 @@ from src.config.politeness import (
     MAX_QUEUE_PER_HOST,
 )
 
-from src.config.storage import VISITED_FILE
+from src.config.storage import VISITED_FILE, VISITED_FSYNC_EVERY
 
 from src.content.url_utils import get_host, is_valid_for_crawling
 from src.network.robots import RobotsCache
@@ -44,7 +44,12 @@ _EMPTY = (None, None)
 class Frontier:
     """Fila thread-safe de URLs para crawling, com politeness por host."""
 
-    def __init__(self, robots: RobotsCache):
+    def __init__(
+        self,
+        robots: RobotsCache,
+        visited_path: str = VISITED_FILE,
+        resume: bool = False,
+    ):
         self._robots = robots
 
         self._queues: dict[str, deque[str]] = {}
@@ -57,6 +62,12 @@ class Frontier:
 
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
+
+        self._visited_path = visited_path
+        os.makedirs(os.path.dirname(visited_path) or ".", exist_ok=True)
+        mode = "a" if resume else "w"
+        self._visited_log = open(visited_path, mode, encoding="utf-8")
+        self._since_fsync = 0
 
     def add(self, url: str) -> bool:
         """Enfileira URL se valida, nova e permitida por robots."""
@@ -161,16 +172,6 @@ class Frontier:
                 heapq.heappush(self._ready_heap, (next_time, host))
                 self._cond.notify()
 
-    def mark_visited(self, urls):
-        """Marca URLs como ja vistas (usado no resume para nao reprocessar)."""
-        with self._lock:
-            for url in urls:
-                if url in self._seen:
-                    continue
-                self._seen.add(url)
-                host = get_host(url)
-                if host is not None:
-                    self._host_count[host] = self._host_count.get(host, 0) + 1
 
     def size(self) -> int:
         with self._lock:
@@ -181,8 +182,42 @@ class Frontier:
         with self._cond:
             self._cond.notify_all()
             
-    def load_visited(self, path: str = VISITED_FILE) -> list[str]:
-        if not os.path.exists(path):
+    def mark_visited(self, urls):
+        """Marca URLs como ja vistas (usado no resume para nao reprocessar)."""
+        with self._lock:
+            for url in urls:
+                if url in self._seen:
+                    continue
+                self._seen.add(url)
+                host = get_host(url)
+                if host is not None:
+                    self._host_count[host] = self._host_count.get(host, 0) + 1
+            
+    def record_visited(self, url: str):
+        """Appenda URL ao log de visitados, com flush+fsync a cada N."""
+        with self._lock:
+            if self._visited_log is None:
+                return
+            self._visited_log.write(url + "\n")
+            self._since_fsync += 1
+            if self._since_fsync >= VISITED_FSYNC_EVERY:
+                self._visited_log.flush()
+                os.fsync(self._visited_log.fileno())
+                self._since_fsync = 0
+
+    def load_visited(self) -> list[str]:
+        if not os.path.exists(self._visited_path):
             return []
-        with open(path, "r", encoding="utf-8") as f:
+        with open(self._visited_path, "r", encoding="utf-8") as f:
             return [line.strip() for line in f if line.strip()]
+
+    def close(self):
+        with self._lock:
+            if self._visited_log is not None:
+                try:
+                    self._visited_log.flush()
+                    os.fsync(self._visited_log.fileno())
+                except OSError:
+                    pass
+                self._visited_log.close()
+                self._visited_log = None

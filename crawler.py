@@ -83,6 +83,7 @@ def worker(
                 metrics.record_failure()
                 continue
 
+            frontier.record_visited(result.final_url)
             metrics.record_success(len(result.raw_bytes))
 
             if debug:
@@ -157,7 +158,7 @@ def main():
     logger.info(f"[crawler] {len(seeds)} seeds carregadas")
     logger.info(f"[crawler] alvo: {args.limit} paginas com {NUM_THREADS} threads")
     robots = RobotsCache()
-    frontier = Frontier(robots)
+    frontier = Frontier(robots, resume=args.resume)
     storage = WarcStorage(resume=args.resume)
     metrics = Metrics(output_path=METRICS_FILE)
     stop_event = threading.Event()
@@ -171,6 +172,7 @@ def main():
         if storage.total_saved() >= args.limit: 
             logger.info(f"[crawler] limite ja atingido ({storage.total_saved()}/{args.limit}), nada a fazer")
             storage.close()
+            frontier.close()
             sys.exit(0)
 
     enqueued = 0
@@ -219,6 +221,7 @@ def main():
             logger.warning(f"[crawler] {alive} threads ainda ativas apos 10s, forcando shutdown")
 
     storage.close()
+    frontier.close()
     metrics.close()
     elapsed = time.time() - start_time
     saved = storage.total_saved()

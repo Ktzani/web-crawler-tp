@@ -6,7 +6,9 @@ tempo e speedup por threads). Grava um CSV com snapshots periodicos.
 """
 
 import csv
+import glob
 import os
+import re
 import threading
 import time
 
@@ -51,6 +53,8 @@ class Metrics:
         if output_dir:
             os.makedirs(output_dir, exist_ok=True)
 
+        self._output_path = self._next_round_path(self._output_path)
+
         self._csv_file = open(self._output_path, "w", newline="", encoding="utf-8")
         self._csv_writer = csv.writer(self._csv_file)
         self._csv_writer.writerow([
@@ -82,6 +86,17 @@ class Metrics:
             self._write_snapshot(storage, frontier)
         # Snapshot final antes de sair.
         self._write_snapshot(storage, frontier)
+
+    @staticmethod
+    def _next_round_path(base_path: str) -> str:
+        output_dir, filename = os.path.split(base_path)
+        stem, ext = os.path.splitext(filename)
+        n = 1
+        while True:
+            candidate = os.path.join(output_dir, f"{stem}_round_{n}{ext}")
+            if not os.path.exists(candidate):
+                return candidate
+            n += 1
 
     def _write_snapshot(self, storage, frontier):
         now = time.time()
