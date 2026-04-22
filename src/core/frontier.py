@@ -1,8 +1,7 @@
 """
 Fila de URLs pendentes para crawling, com politeness por host.
 
-ESTRUTURA DE DADOS
-------------------
+- ESTRUTURA DE DADOS
 Em vez de uma fila FIFO global (que bloquearia muitas threads no mesmo
 host), o frontier mantem uma fila por host:
 
@@ -12,8 +11,7 @@ host), o frontier mantem uma fila por host:
   _seen:       set[url]                      # dedup global
   _host_count: dict host -> int              # paginas aceitas por host
 
-CONCORRENCIA
-------------
+- CONCORRENCIA
 Um unico lock protege todas as estruturas. Operacoes do frontier sao
 rapidas (memoria); threads passam a maior parte do tempo em I/O de rede.
 """

@@ -2,8 +2,8 @@
 Escrita de arquivos WARC (.warc.gz), rotacionando a cada N paginas.
 
 Para cada pagina sao salvos dois registros:
-  - 'request': os metadados da requisicao feita
-  - 'response': a resposta HTTP completa (status line + headers + body)
+- 'request': os metadados da requisicao feita
+- 'response': a resposta HTTP completa (status line + headers + body)
 """
 
 import os
@@ -61,7 +61,7 @@ class WarcStorage:
             self._current_file_index = idx + 1
         elif last is not None:
             # Crawl novo mas ja existem WARCs antigos no diretorio: avanca o
-            # indice para nao sobrescrever silenciosamente. Quem quiser comecar
+            # indice para nao sobrescrever silenciosamente. Se quiser comecar
             # do zero deve apagar o diretorio antes.
             self._current_file_index = last[0] + 1
         

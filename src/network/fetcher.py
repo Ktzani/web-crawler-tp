@@ -1,10 +1,10 @@
 """
 Baixa paginas HTML via HTTP. Responsavel por:
-  - Manter uma Session por thread (keep-alive, pool de conexoes)
-  - Fazer GET com timeout e streaming
-  - Validar Content-Type (apenas HTML)
-  - Truncar respostas acima do limite configurado
-  - Retornar os bytes crus (necessarios para o WARC) e metadados
+- Manter uma Session por thread (keep-alive, pool de conexoes)
+- Fazer GET com timeout e streaming
+- Validar Content-Type (apenas HTML)
+- Truncar respostas acima do limite configurado
+- Retornar os bytes crus (necessarios para o WARC) e metadados
 """
 
 import threading

@@ -2,10 +2,10 @@
 Cache thread-safe de arquivos robots.txt por host..
 
 O cache é critico por dois motivos:
-  1. Politeness: nao faz sentido baixar robots.txt a cada URL do mesmo host.
-  2. Corretude: se 64 threads comecam a crawlear o mesmo host ao mesmo
-     tempo, todas tentariam baixar robots.txt simultaneamente. O lock
-     garante que apenas UMA baixa e as outras esperam o resultado.
+1. Politeness: nao faz sentido baixar robots.txt a cada URL do mesmo host.
+2. Corretude: se 64 threads comecam a crawlear o mesmo host ao mesmo
+tempo, todas tentariam baixar robots.txt simultaneamente. O lock
+garante que apenas UMA baixa e as outras esperam o resultado.
 """
 
 import threading
@@ -80,10 +80,10 @@ class RobotsCache:
     def _fetch_and_parse(self, host: str, sample_url: str):
         """
         Baixa e parseia robots.txt. Regras de tratamento de resposta:
-          - 2xx: parseia o conteudo
-          - 404/410: nao existe, tudo permitido
-          - 401/403: bloqueio total (servidor protegeu o proprio robots)
-          - outros erros / timeout: liberal (nao travar por erro transiente)
+        - 2xx: parseia o conteudo
+        - 404/410: nao existe, tudo permitido
+        - 401/403: bloqueio total (servidor protegeu o proprio robots)
+        - outros erros / timeout: liberal (nao travar por erro transiente)
         """
         scheme = urlparse(sample_url).scheme or "https"
         robots_url = f"{scheme}://{host}/robots.txt"

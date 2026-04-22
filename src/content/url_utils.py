@@ -13,10 +13,10 @@ def normalize_url(url: str) -> str | None:
     Normaliza uma URL para uma forma canonica usada como chave de dedup.
 
     Passos:
-      1. Remove o fragment (#...): fragments sao client-side.
-      2. Valida scheme ANTES de url_normalize (a lib "conserta" strings
+    1. Remove o fragment (#...): fragments sao client-side.
+    2. Valida scheme ANTES de url_normalize (a lib "conserta" strings
          sem scheme prefixando https://, criando URLs fantasmas).
-      3. Aplica url_normalize: lowercase do host, portas default, etc.
+    3. Aplica url_normalize: lowercase do host, portas default, etc.
     """
     if not url:
         return None
