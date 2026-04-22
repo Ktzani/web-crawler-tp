@@ -26,7 +26,10 @@ import time
 # Garante que 'src/' eh encontrado independente de onde rodamos o script.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.config.parallelism import NUM_THREADS, METRICS_FILE
+from src.config.parallelism import (
+    NUM_THREADS, METRICS_FILE,
+    WATCHDOG_INTERVAL, WATCHDOG_STALL_SECONDS, WATCHDOG_MIN_PAGES,
+)
 from src.core.frontier import Frontier
 from src.network.robots import RobotsCache
 from src.network.fetcher import fetch
@@ -112,6 +115,55 @@ def worker(
             frontier.release_host(url)
 
 
+def watchdog(
+    frontier: Frontier,
+    storage: WarcStorage,
+    seeds: list[str],
+    stop_event: threading.Event,
+    interval: float = WATCHDOG_INTERVAL,
+    stall_seconds: float = WATCHDOG_STALL_SECONDS,
+    min_pages: int = WATCHDOG_MIN_PAGES,
+):
+    """
+    Monitora storage.total_saved() em janelas de stall_seconds. Se numa
+    janela foram salvas menos que min_pages paginas, limpa as filas do
+    frontier e re-enfileira as seeds originais ("restart" sem matar o
+    processo).
+
+    _seen e _host_count sao preservados -- nao re-baixamos URLs ja
+    visitadas nem reabrimos hosts ja saturados.
+    """
+    checkpoint_count = storage.total_saved()
+    checkpoint_time = time.monotonic()
+
+    while not stop_event.is_set():
+        if stop_event.wait(timeout=interval):
+            return
+
+        now = time.monotonic()
+        window = now - checkpoint_time
+        if window < stall_seconds:
+            continue
+
+        current = storage.total_saved()
+        delta = current - checkpoint_count
+
+        if delta >= min_pages:
+            checkpoint_count = current
+            checkpoint_time = now
+            continue
+
+        logger.warning(
+            f"[watchdog] apenas {delta} paginas em {window:.0f}s "
+            f"(min={min_pages}). Reiniciando frontier..."
+        )
+        frontier.clear_queues(forget=seeds)
+        re_enqueued = sum(1 for u in seeds if frontier.add(u))
+        logger.info(f"[watchdog] {re_enqueued} seeds re-enfileiradas")
+        checkpoint_count = storage.total_saved()
+        checkpoint_time = time.monotonic()
+
+
 def load_seeds(path: str) -> list[str]:
     """
     Le seeds de um arquivo OU de um diretorio.
@@ -190,6 +242,14 @@ def main():
         sys.exit(1)
 
     metrics.start(storage, frontier, stop_event)
+
+    watchdog_thread = threading.Thread(
+        target=watchdog,
+        args=(frontier, storage, seeds, stop_event),
+        name="watchdog",
+        daemon=True,
+    )
+    watchdog_thread.start()
 
     threads = []
     for i in range(NUM_THREADS):

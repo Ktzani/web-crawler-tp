@@ -177,6 +177,25 @@ class Frontier:
         with self._lock:
             return self._pending_urls
 
+    def clear_queues(self, forget: list[str] | None = None):
+        """
+        Esvazia as filas pendentes por host (bolha de hosts dominantes),
+        preservando _seen e _host_count -- nao re-baixamos URLs ja
+        visitadas nem reabrimos hosts ja saturados.
+
+        forget: URLs a remover do _seen para permitir que sejam
+        re-enfileiradas (tipicamente as seeds originais).
+        """
+        with self._cond:
+            self._queues.clear()
+            self._next_time.clear()
+            self._ready_heap.clear()
+            self._pending_urls = 0
+            if forget:
+                for url in forget:
+                    self._seen.discard(url)
+            self._cond.notify_all()
+
     def notify_all(self):
         """Acorda todas as threads (usado no shutdown)."""
         with self._cond:
