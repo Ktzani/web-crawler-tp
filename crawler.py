@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
 """
-crawler.py
-----------
 Entry point do web crawler. Orquestra os demais modulos:
 
   seeds -> Frontier -> [N workers] -> Fetcher -> Parser -> Storage
@@ -14,6 +11,7 @@ Argumentos:
   -s, --seeds   Arquivo com URLs iniciais (uma por linha).
   -n, --limit   Numero alvo de paginas a baixar.
   -d, --debug   Modo debug: imprime JSON por pagina em stdout.
+  -r, --resume  Retoma de onde parou usando visited.txt.
 """
 
 import argparse
@@ -23,7 +21,6 @@ import sys
 import threading
 import time
 
-# Garante que 'src/' eh encontrado independente de onde rodamos o script.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from src.config.parallelism import (
@@ -43,7 +40,7 @@ basicConfig(level=INFO)
 logger = getLogger(__name__)
 
 def worker(
-    worker_id: int,
+    id: int,
     frontier: Frontier,
     storage: WarcStorage,
     metrics: Metrics,
@@ -98,20 +95,18 @@ def worker(
                 }
                 print(json.dumps(record, ensure_ascii=False), flush=True)
 
-            # Verifica limite logo apos incrementar.
             if storage.total_saved() >= limit:
                 stop_event.set()
                 frontier.notify_all()
                 return
 
-            # Enfileira outlinks descobertos.
             for link in parsed.outlinks:
                 if stop_event.is_set():
                     break
                 frontier.add(link)
 
         finally:
-            # SEMPRE liberamos o host, mesmo em caso de erro.
+            # Libera SEMPRE o host, mesmo em caso de erro.
             frontier.release_host(url)
 
 
@@ -130,8 +125,8 @@ def watchdog(
     frontier e re-enfileira as seeds originais ("restart" sem matar o
     processo).
 
-    _seen e _host_count sao preservados -- nao re-baixamos URLs ja
-    visitadas nem reabrimos hosts ja saturados.
+    _seen e _host_count sao preservados -- URLs ja visitadas nao sao
+    re-baixadas nem hosts ja saturados sao reabertos.
     """
     checkpoint_count = storage.total_saved()
     checkpoint_time = time.monotonic()

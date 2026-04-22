@@ -1,6 +1,4 @@
 """
-frontier.py
------------
 Fila de URLs pendentes para crawling, com politeness por host.
 
 ESTRUTURA DE DADOS
@@ -70,7 +68,7 @@ class Frontier:
         self._since_fsync = 0
 
     def add(self, url: str) -> bool:
-        """Enfileira URL se valida, nova e permitida por robots."""
+        """Enfileira URL se válida, nova e permitida por robots."""
         if not is_valid_for_crawling(url):
             return False
 
@@ -78,8 +76,8 @@ class Frontier:
         if host is None:
             return False
 
-        # Checa robots ANTES do lock: pode envolver rede, nao queremos
-        # segurar o lock global durante uma requisicao.
+        # Checa robots ANTES do lock: pode envolver rede, e segurar o
+        # lock global durante uma requisicao eh indesejavel.
         if not self._robots.can_fetch(url):
             return False
 
@@ -180,8 +178,8 @@ class Frontier:
     def clear_queues(self, forget: list[str] | None = None):
         """
         Esvazia as filas pendentes por host (bolha de hosts dominantes),
-        preservando _seen e _host_count -- nao re-baixamos URLs ja
-        visitadas nem reabrimos hosts ja saturados.
+        preservando _seen e _host_count -- URLs ja visitadas nao sao
+        re-baixadas nem hosts ja saturados sao reabertos.
 
         forget: URLs a remover do _seen para permitir que sejam
         re-enfileiradas (tipicamente as seeds originais).

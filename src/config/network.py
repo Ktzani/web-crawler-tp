@@ -1,6 +1,4 @@
 """
-network.py
-----------
 Configuracoes de rede: HTTP, User-Agent e limites de tamanho.
 """
 

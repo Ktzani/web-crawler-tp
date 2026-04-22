@@ -36,7 +36,6 @@ def parse_html(html: str, base_url: str) -> ParsedPage:
     words = text.split()
     text_preview = " ".join(words[:20])
 
-    # Outlinks: <a href=...> resolvidos e filtrados. Set dedup na pagina.
     outlinks_set: set[str] = set()
     for a in soup.find_all("a", href=True):
         resolved = resolve_url(base_url, a["href"])

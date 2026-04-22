@@ -1,6 +1,4 @@
 """
-metrics.py
-----------
 Coleta de metricas para analise posterior (graficos de rate ao longo do
 tempo e speedup por threads). Grava um CSV com snapshots periodicos.
 """
@@ -17,9 +15,9 @@ from src.config.parallelism import METRICS_INTERVAL
 class Metrics:
     """
     Contadores cumulativos + snapshot periodico em CSV. Thread-safe.
-
     paginas SALVAS vem do WarcStorage.total_saved() para nao duplicar
-    contagem; aqui trackeamos apenas pages_failed e bytes_downloaded.
+    contagem; 
+    aqui sao trackeados apenas pages_failed e bytes_downloaded.
     """
 
     def __init__(
@@ -84,8 +82,7 @@ class Metrics:
             if stop_event.wait(timeout=self._interval):
                 break
             self._write_snapshot(storage, frontier)
-        # Snapshot final antes de sair.
-        self._write_snapshot(storage, frontier)
+        self._write_snapshot(storage, frontier) # Snapshot final antes de sair.
 
     @staticmethod
     def _next_round_path(base_path: str) -> str:

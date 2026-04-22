@@ -1,11 +1,8 @@
 """
-robots.py
----------
 Cache thread-safe de arquivos robots.txt por host. Usa Protego para parsing.
 
 O cache eh critico por dois motivos:
-  1. Politeness: nao faz sentido baixar robots.txt toda vez que vamos
-     crawlear uma URL do mesmo host.
+  1. Politeness: nao faz sentido baixar robots.txt a cada URL do mesmo host.
   2. Corretude: se 64 threads comecam a crawlear o mesmo host ao mesmo
      tempo, todas tentariam baixar robots.txt simultaneamente. O lock
      garante que apenas UMA baixa e as outras esperam o resultado.
@@ -28,7 +25,7 @@ class RobotsCache:
     def __init__(self):
         self._cache: dict[str, tuple[Protego | None, float]] = {}
         self._lock = threading.Lock()
-        # Locks por host para evitar thundering herd no fetch do robots.
+        
         self._host_locks: dict[str, threading.Lock] = {}
         self._host_locks_guard = threading.Lock()
 
@@ -62,7 +59,6 @@ class RobotsCache:
 
         host_lock = self._get_host_lock(host)
         with host_lock:
-            # Re-check apos pegar o lock do host.
             with self._lock:
                 entry = self._cache.get(host)
                 if entry is not None:

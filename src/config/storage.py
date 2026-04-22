@@ -1,6 +1,4 @@
 """
-storage.py
-----------
 Configuracoes de armazenamento: WARC e diretorio de saida.
 """
 
@@ -18,5 +16,5 @@ WARC_PREFIX = "corpus"
 # Log append-only de URLs ja processadas, usado para retomar apos crash.
 VISITED_FILE = "data/visited.txt"
 
-# A cada quantas paginas damos fsync no log de visitados.
+# A cada quantas paginas eh feito fsync no log de visitados.
 VISITED_FSYNC_EVERY = 50

@@ -1,6 +1,4 @@
 """
-fetcher.py
-----------
 Baixa paginas HTML via HTTP. Responsavel por:
   - Manter uma Session por thread (keep-alive, pool de conexoes)
   - Fazer GET com timeout e streaming
@@ -19,7 +17,7 @@ from src.config.filters import HTML_CONTENT_TYPES
 
 
 # Session por thread: keep-alive aumenta muito a performance. Session NAO
-# eh garantidamente thread-safe, entao damos uma por thread.
+# eh garantidamente thread-safe, entao ha uma por thread.
 _thread_local = threading.local()
 
 
@@ -35,8 +33,8 @@ def _get_session() -> requests.Session:
 @dataclass
 class FetchResult:
     ok: bool
-    url: str                    # URL pedida originalmente
-    final_url: str              # URL efetiva apos redirects
+    url: str # URL pedida originalmente
+    final_url: str # URL efetiva apos redirects
     status_code: int | None
     content_type: str
     raw_bytes: bytes
@@ -89,7 +87,6 @@ def fetch(url: str) -> FetchResult:
                 error="non_html_content_type",
             )
 
-        # Le o body em chunks com limite de tamanho.
         chunks: list[bytes] = []
         total = 0
         try:

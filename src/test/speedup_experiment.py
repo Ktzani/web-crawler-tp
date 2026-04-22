@@ -1,7 +1,4 @@
-#!/usr/bin/env python3
 """
-speedup_experiment.py
----------------------
 Roda o crawler varias vezes com diferentes valores de NUM_THREADS e
 gera um CSV com os resultados. Usa as MESMAS seeds em todas as rodadas
 para comparacao justa.
@@ -38,14 +35,12 @@ def patch_num_threads(value: int):
     with open(path, "r") as f:
         content = f.read()
 
-    # Regex que pega o valor atual de NUM_THREADS
     match = re.search(r"^NUM_THREADS\s*=\s*(\d+)", content, re.MULTILINE)
     if not match:
-        print(f"ERRO: nao achei NUM_THREADS em {path}", file=sys.stderr)
+        print(f"ERRO: NUM_THREADS nao encontrado em {path}", file=sys.stderr)
         sys.exit(1)
     previous = int(match.group(1))
 
-    # Substitui
     new_content = re.sub(
         r"^NUM_THREADS\s*=\s*\d+",
         f"NUM_THREADS = {value}",
@@ -81,7 +76,6 @@ def run_one(seeds: str, limit: int) -> tuple[float, int]:
         )
     t_elapsed = time.time() - t_start
 
-    # Tenta extrair o "X paginas em Ys" do stderr
     match = re.search(
         r"concluido:\s*(\d+)\s*paginas\s*em\s*([\d.]+)\s*s",
         result.stderr,
@@ -135,7 +129,6 @@ def main():
         print(f"Rodadas: {args.runs} por nivel = {total_runs} total")
 
         for n_threads in thread_levels:
-            # Aplica o valor dessa rodada
             prev = patch_num_threads(n_threads)
             if original_threads is None:
                 original_threads = prev
@@ -161,12 +154,10 @@ def main():
                     continue
 
     finally:
-        # Restaura NUM_THREADS original
         if original_threads is not None:
             patch_num_threads(original_threads)
             print(f"\nRestaurado NUM_THREADS={original_threads}")
 
-    # Escreve o CSV
     with open(args.output, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
@@ -178,7 +169,6 @@ def main():
 
     print(f"\n=== Resultados salvos em {args.output} ===\n")
 
-    # Imprime resumo agregado (media por nivel de threads)
     by_threads: dict[int, list[float]] = {}
     for r in results:
         by_threads.setdefault(r["num_threads"], []).append(r["elapsed_sec"])

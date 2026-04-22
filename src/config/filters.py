@@ -1,8 +1,6 @@
 """
-filters.py
-----------
-Filtros de URL e MIME: que schemes aceitamos, que extensoes sao
-obviamente nao-HTML, e quais Content-Types aceitamos apos o fetch.
+Filtros de URL e MIME: que schemes são aceitos, que extensoes sao
+obviamente nao-HTML, e quais Content-Types são aceitos apos o fetch.
 """
 
 # Schemes de URL aceitos. Rejeita ftp, mailto, javascript, data, etc.

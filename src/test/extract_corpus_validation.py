@@ -64,7 +64,6 @@ def extract_corpus(corpus_dir: str, out_dir: str, limit: int | None = None):
                     print(f"-> {counter} HTMLs extraidos em {out_dir}/", file=sys.stderr)
                     return
 
-        # Progresso por arquivo
         print(f"  {warc_name}: {counter} paginas acumuladas", file=sys.stderr)
 
     print(f"-> {counter} HTMLs extraidos em {out_dir}/", file=sys.stderr)

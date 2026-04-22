@@ -1,13 +1,9 @@
 """
-storage.py
-----------
 Escrita de arquivos WARC (.warc.gz), rotacionando a cada N paginas.
 
-Para cada pagina salvamos dois registros:
-  - 'request': os metadados da requisicao que fizemos
+Para cada pagina sao salvos dois registros:
+  - 'request': os metadados da requisicao feita
   - 'response': a resposta HTTP completa (status line + headers + body)
-
-Isso segue a convencao do Heritrix/IA e torna o corpus auto-contido.
 """
 
 import os
@@ -47,11 +43,8 @@ class WarcStorage:
         self._prefix = prefix
         os.makedirs(self._dir, exist_ok=True)
 
-        # Lock serializa escritas. Escrita em disco eh muito mais rapida
-        # que I/O de rede, entao esse lock nao vira gargalo.
         self._lock = threading.Lock()
 
-        # Estado do arquivo atual (inicializado preguicosamente).
         self._current_file = None
         self._current_writer = None
         self._current_file_index = 0
@@ -117,7 +110,6 @@ class WarcStorage:
 
     def _write_pair(self, result: FetchResult):
         """Escreve os registros 'request' e 'response' para uma pagina."""
-        # --- Record de REQUEST ---
         request_headers = StatusAndHeaders(
             "GET / HTTP/1.1",
             [("User-Agent", USER_AGENT), ("Host", _host_of(result.final_url))],
@@ -127,7 +119,6 @@ class WarcStorage:
             result.final_url, "request", http_headers=request_headers,
         )
 
-        # --- Record de RESPONSE ---
         status_line = f"HTTP/1.1 {result.status_code} OK"
         response_http_headers = StatusAndHeaders(
             status_line,
@@ -140,7 +131,6 @@ class WarcStorage:
             http_headers=response_http_headers,
         )
 
-        # Amarra request -> response via Concurrent-To.
         request_record.rec_headers.add_header(
             "WARC-Concurrent-To",
             response_record.rec_headers.get_header("WARC-Record-ID"),

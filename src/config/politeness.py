@@ -1,6 +1,4 @@
 """
-politeness.py
--------------
 Configuracoes de politeness: delay minimo entre requests, timeout de
 robots.txt e limites por host.
 """
