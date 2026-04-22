@@ -140,7 +140,7 @@ class Frontier:
                 url = q.popleft()
                 self._pending_urls -= 1
 
-                # Nao re-adicionamos o host na heap aqui -- sera feito em
+                # Nao re-adicionamos o host na heap aqui - sera feito em
                 # release_host() com o next_time atualizado pelo crawl_delay.
                 return (url, now)
 
@@ -178,7 +178,7 @@ class Frontier:
     def clear_queues(self, forget: list[str] | None = None):
         """
         Esvazia as filas pendentes por host (bolha de hosts dominantes),
-        preservando _seen e _host_count -- URLs ja visitadas nao sao
+        preservando _seen e _host_count - URLs ja visitadas nao sao
         re-baixadas nem hosts ja saturados sao reabertos.
 
         forget: URLs a remover do _seen para permitir que sejam

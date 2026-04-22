@@ -1,6 +1,4 @@
 """
-url_utils.py
-------------
 Utilidades para lidar com URLs: normalizacao canonica, extracao de host
 e filtros de escopo (scheme, extensao).
 """

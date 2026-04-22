@@ -1,8 +1,7 @@
 """
-parser.py
----------
-Extrai do HTML: titulo, texto visivel e outlinks. Usa BeautifulSoup com
-o parser da stdlib (html.parser) para nao depender de lxml.
+Extrai do HTML: titulo, texto visivel e outlinks. 
+Usa BeautifulSoup para parsear o HTML e heuristicas simples para extrair 
+o texto visivel. Tambem resolve e normaliza os outlinks encontrados.
 """
 
 from dataclasses import dataclass
@@ -15,15 +14,14 @@ from src.content.url_utils import resolve_url, is_valid_for_crawling
 class ParsedPage:
     title: str
     text: str
-    text_preview: str          # primeiras 20 palavras (debug mode)
+    text_preview: str # (debug mode)
     outlinks: list[str]
 
 
 def parse_html(html: str, base_url: str) -> ParsedPage:
     """Parseia HTML. Retorna titulo, texto e outlinks validos."""
     soup = BeautifulSoup(html, "html.parser")
-
-    # Remove elementos que nao fazem parte do texto visivel.
+    
     for tag in soup(["script", "style", "noscript", "template"]):
         tag.decompose()
 
@@ -31,7 +29,7 @@ def parse_html(html: str, base_url: str) -> ParsedPage:
     title = title_tag.get_text(strip=True) if title_tag else ""
 
     text = soup.get_text(separator=" ", strip=True)
-    text = " ".join(text.split())  # normaliza whitespace
+    text = " ".join(text.split())
 
     words = text.split()
     text_preview = " ".join(words[:20])
