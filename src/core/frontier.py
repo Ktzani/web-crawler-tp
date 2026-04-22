@@ -77,7 +77,7 @@ class Frontier:
             return False
 
         # Checa robots ANTES do lock: pode envolver rede, e segurar o
-        # lock global durante uma requisicao eh indesejavel.
+        # lock global durante uma requisicao é indesejavel.
         if not self._robots.can_fetch(url):
             return False
 

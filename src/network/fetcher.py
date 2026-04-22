@@ -17,9 +17,8 @@ from src.config.filters import HTML_CONTENT_TYPES
 
 
 # Session por thread: keep-alive aumenta muito a performance. Session NAO
-# eh garantidamente thread-safe, entao ha uma por thread.
+# é garantidamente thread-safe, entao ha uma por thread.
 _thread_local = threading.local()
-
 
 def _get_session() -> requests.Session:
     session = getattr(_thread_local, "session", None)

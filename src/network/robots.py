@@ -1,7 +1,7 @@
 """
-Cache thread-safe de arquivos robots.txt por host. Usa Protego para parsing.
+Cache thread-safe de arquivos robots.txt por host..
 
-O cache eh critico por dois motivos:
+O cache é critico por dois motivos:
   1. Politeness: nao faz sentido baixar robots.txt a cada URL do mesmo host.
   2. Corretude: se 64 threads comecam a crawlear o mesmo host ao mesmo
      tempo, todas tentariam baixar robots.txt simultaneamente. O lock

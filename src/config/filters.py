@@ -3,12 +3,10 @@ Filtros de URL e MIME: que schemes são aceitos, que extensoes sao
 obviamente nao-HTML, e quais Content-Types são aceitos apos o fetch.
 """
 
-# Schemes de URL aceitos. Rejeita ftp, mailto, javascript, data, etc.
+# Schemes de URL aceitos.
 ALLOWED_SCHEMES = frozenset({"http", "https"})
 
-# Extensoes que claramente NAO sao HTML. Filtrar antes de fazer a
-# requisicao economiza banda e tempo. A lista cobre os casos mais
-# comuns; o filtro final eh feito pelo Content-Type da resposta.
+# Extensoes que claramente nao sao HTML (filtradas antes do fetch).
 NON_HTML_EXTENSIONS = frozenset({
     # Imagens
     ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".ico", ".tiff",
@@ -24,6 +22,5 @@ NON_HTML_EXTENSIONS = frozenset({
     ".css", ".js", ".json", ".xml", ".csv", ".rss", ".atom",
 })
 
-# Prefixos de Content-Type considerados como HTML (validacao pos-fetch).
-# Comparados em lowercase; "text/html; charset=utf-8" eh HTML valido.
+# Prefixos de Content-Type aceitos como HTML.
 HTML_CONTENT_TYPES = ("text/html", "application/xhtml+xml")

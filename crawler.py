@@ -54,7 +54,7 @@ def worker(
     Repete ate stop_event ser setado OU o frontier ficar vazio:
       1. Pega a proxima URL (bloqueia se preciso)
       2. Faz o fetch
-      3. Se OK e eh HTML: parseia, armazena, e enfileira os outlinks
+      3. Se OK e é HTML: parseia, armazena, e enfileira os outlinks
       4. Chama release_host para atualizar o delay do host (em finally)
     """
     while not stop_event.is_set():
