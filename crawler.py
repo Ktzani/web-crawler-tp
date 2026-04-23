@@ -1,17 +1,17 @@
 """
 Entry point do web crawler. Orquestra os demais modulos:
 
-  seeds -> Frontier -> [N workers] -> Fetcher -> Parser -> Storage
-                                               +-> enqueue outlinks
+seeds -> Frontier -> [N workers] -> Fetcher -> Parser -> Storage
+                                                            +-> enqueue outlinks
 
 Uso:
   python3 crawler.py -s <seeds_file> -n <limit> [-d]
 
 Argumentos:
-  -s, --seeds   Arquivo com URLs iniciais (uma por linha).
-  -n, --limit   Numero alvo de paginas a baixar.
-  -d, --debug   Modo debug: imprime JSON por pagina em stdout.
-  -r, --resume  Retoma de onde parou usando visited.txt.
+-s, --seeds   Arquivo com URLs iniciais (uma por linha).
+-n, --limit   Numero alvo de paginas a baixar.
+-d, --debug   Modo debug: imprime JSON por pagina em stdout.
+-r, --resume  Retoma de onde parou usando visited.txt.
 """
 
 import argparse
@@ -52,10 +52,10 @@ def worker(
     Loop principal de uma thread worker.
 
     Repete ate stop_event ser setado OU o frontier ficar vazio:
-      1. Pega a proxima URL (bloqueia se preciso)
-      2. Faz o fetch
-      3. Se OK e é HTML: parseia, armazena, e enfileira os outlinks
-      4. Chama release_host para atualizar o delay do host (em finally)
+    1. Pega a proxima URL (bloqueia se preciso)
+    2. Faz o fetch
+    3. Se OK e é HTML: parseia, armazena, e enfileira os outlinks
+    4. Chama release_host para atualizar o delay do host (em finally)
     """
     while not stop_event.is_set():
         url, _ = frontier.get_next(stop_event)
