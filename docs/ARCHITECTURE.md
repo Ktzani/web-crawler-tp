@@ -33,9 +33,9 @@ dentro. Complementa o `README.md` (que é focado em uso).
          ┌───────────────┐    ┌──────────────┐
          │  WarcStorage  │    │   Frontier   │
          │  1000/arquivo │    │  (re-enqueue │
-         │  gzip         │    │   outlinks)  │
-         │  + visited.txt│    └──────────────┘
-         └───────┬───────┘
+         │  gzip         │    │   outlinks + │
+         │               │    │  visited.txt)│
+         └───────┬───────┘    └──────────────┘
                  │
                  ▼
          ┌───────────────┐
@@ -55,24 +55,26 @@ e seus links voltam pra fila. Tudo respeitando `robots.txt` e delay
 | `crawler.py` | raiz | Entry point: CLI, threads, orquestração |
 | `filters.py` | `src/config/` | Schemes aceitos, extensões e MIMEs não-HTML |
 | `network.py` | `src/config/` | User-Agent, `HTTP_TIMEOUT`, `MAX_PAGE_SIZE` |
-| `parallelism.py` | `src/config/` | `NUM_THREADS`, `METRICS_INTERVAL`, `METRICS_FILE` |
+| `parallelism.py` | `src/config/` | `NUM_THREADS`, `METRICS_INTERVAL`, `METRICS_FILE`, `WATCHDOG_*` |
 | `politeness.py` | `src/config/` | `DEFAULT_CRAWL_DELAY`, `MAX_PAGES_PER_HOST`, `MAX_QUEUE_PER_HOST` |
 | `storage.py` (config) | `src/config/` | `PAGES_PER_WARC`, `WARC_DIR`, `VISITED_FILE` |
-| `frontier.py` | `src/core/` | Fila de URLs com politeness por host |
+| `frontier.py` | `src/core/` | Fila de URLs com politeness por host + log `visited.txt` |
 | `robots.py` | `src/network/` | Cache thread-safe de `robots.txt` |
 | `fetcher.py` | `src/network/` | HTTP GET com validação de MIME |
 | `url_utils.py` | `src/content/` | Normalização e filtros de URL |
 | `parser.py` | `src/content/` | Extração de título, texto e outlinks |
-| `storage.py` | `src/output/` | Escrita de WARCs rotativos + log `visited.txt` |
+| `storage.py` | `src/output/` | Escrita de WARCs rotativos |
 | `metrics.py` | `src/output/` | Snapshot periódico em CSV |
 | `speedup_experiment.py` | `src/test/` | Varia `NUM_THREADS`, mede tempo, gera `speedup.csv` |
-| `extract_corpus.py` | `src/test/` | Expande WARC em arquivos `.html` para inspeção |
-| `base_validation.py` | `src/test/` | Validação rápida do corpus gerado |
+| `extract_corpus_validation.py` | `src/test/` | Expande WARC em arquivos `.html` para inspeção/validação |
+| `check_seeds.py` | `scripts/` | Classifica cada seed em visitada, redirecionada ou perdida |
+| `dedupe_corpus.py` | `scripts/` | Reescreve os WARCs removendo URLs duplicadas (mantém 1ª ocorrência), com backup em `data/corpus.bak/` |
 
 O agrupamento reflete as camadas: `network/` lida com rede, `content/`
 com processamento, `output/` com persistência, `core/` com o motor,
-`config/` com constantes (agora quebrado em 5 arquivos por tema),
-e `test/` com utilitários fora do caminho do crawl.
+`config/` com constantes (quebrado em 5 arquivos por tema),
+`test/` com utilitários que rodam em cima do corpus já gerado, e
+`scripts/` com ferramentas one-shot de diagnóstico e limpeza.
 
 ## Estruturas de dados
 
@@ -114,9 +116,11 @@ por arquivo. O arquivo ativo é trocado dentro do `store()` quando
 `current_count >= PAGES_PER_WARC`. Um único lock serializa as escritas
 — disk I/O não é gargalo comparado a rede.
 
-Além do WARC, `WarcStorage` mantém um log append-only em
-`data/visited.txt` — uma linha por URL processada. Abre em modo `a` sob
-`-r` (append) ou `w` (sobrescrever) no modo fresh, com `fsync` a cada
+O log append-only em `data/visited.txt` — uma linha por URL processada
+— é mantido pelo `Frontier` (`record_visited()`), não pelo storage:
+assim, cada URL é registrada no mesmo momento em que sai da fronteira,
+independente de ter virado WARC ou não. Abre em modo `a` sob `-r`
+(append) ou `w` (sobrescrever) no modo fresh, com `fsync` a cada
 `VISITED_FSYNC_EVERY = 50` páginas para sobreviver a quedas.
 
 ### Metrics
@@ -135,7 +139,8 @@ e escreve uma linha no CSV a cada snapshot (`METRICS_INTERVAL = 30s`).
 4. Se `-r`: carrega `visited.txt`, marca URLs no frontier, ajusta contador do storage
 5. Enfileira cada seed via `frontier.add(url)`
 6. `metrics.start()` dispara thread de snapshot
-7. Cria `NUM_THREADS` workers; join loop tolerante a Ctrl+C
+7. Dispara thread do **watchdog** (monitora estagnação — ver abaixo)
+8. Cria `NUM_THREADS` workers; join loop tolerante a Ctrl+C
 
 ### Loop do worker
 
@@ -149,7 +154,8 @@ while not stop_event.is_set():
             metrics.record_failure()
             continue
         parsed = parse_html(result.raw_bytes.decode(...), result.final_url)
-        if storage.store(result):           # grava WARC + appenda visited.txt
+        if storage.store(result):           # grava WARC
+            frontier.record_visited(result.final_url)  # appenda visited.txt
             metrics.record_success(len(result.raw_bytes))
             if debug: print(json_record)
             if storage.total_saved() >= limit:
@@ -171,12 +177,31 @@ while not stop_event.is_set():
 - `stop_event.set()` + `frontier.notify_all()` acorda as threads
   dormindo em `cond.wait()`.
 
+### Watchdog de estagnação
+
+Em runs longos, a fronteira pode ficar "empoçada" em poucos hosts lentos
+ou enormes: as threads ainda trabalham, mas o throughput cai a poucas
+páginas por minuto. A thread `watchdog` (em `crawler.py`) monitora
+`storage.total_saved()` em janelas de `WATCHDOG_STALL_SECONDS = 60s`. Se
+nessa janela foram salvas menos que `WATCHDOG_MIN_PAGES = 10` páginas,
+ela chama `frontier.clear_queues(forget=seeds)`:
+
+- Esvazia `_queues`, `_next_time`, `_ready_heap` e zera `_pending_urls`.
+- Preserva `_seen` e `_host_count` — URLs já visitadas **não** voltam
+  para a fila e hosts já saturados continuam fechados.
+- Remove as seeds originais de `_seen` para poder re-enfileirá-las como
+  novos pontos de partida.
+
+Constantes em `src/config/parallelism.py` (`WATCHDOG_INTERVAL`,
+`WATCHDOG_STALL_SECONDS`, `WATCHDOG_MIN_PAGES`). É um "restart suave" —
+o processo, o WARC em andamento e o `visited.txt` continuam intactos.
+
 ### Parada
 
 1. Uma thread atinge o limite e seta o event (ou o usuário aperta Ctrl+C)
 2. As outras threads veem o event no próximo loop e retornam
 3. Em Ctrl+C há um deadline de 10s antes de forçar shutdown
-4. `storage.close()` faz o `fsync` final de `visited.txt` e fecha o WARC
+4. `storage.close()` fecha o WARC atual e `frontier.close()` faz o `fsync` final de `visited.txt`
 5. `metrics.close()` aguarda o último snapshot e fecha o CSV
 
 ## Concorrência
@@ -185,10 +210,10 @@ while not stop_event.is_set():
 
 | Lock | Protege | Granularidade |
 |---|---|---|
-| `Frontier._lock` (Condition) | Estruturas do frontier | Único |
+| `Frontier._lock` (Condition) | Estruturas do frontier + log `visited.txt` | Único |
 | `RobotsCache._lock` | Dict `_cache` | Único |
 | `RobotsCache._host_locks[h]` | Fetch de robots.txt de 1 host | Por host |
-| `WarcStorage._lock` | Writer WARC atual + visited.txt | Único |
+| `WarcStorage._lock` | Writer WARC atual | Único |
 | `Metrics._lock` | Contadores | Único |
 
 ### Padrões de concorrência
@@ -321,3 +346,12 @@ número médio de outlinks por página:
 
 Espaço: O(N) para o set `_seen` + O(outlinks pendentes) para as queues.
 Em prática, ~100 bytes por URL — 100k URLs ≈ 10 MB de RAM.
+
+## NEXT STEPS
+1- Corrigir despriorização de seed
+- Não é bug — é o comportamento esperado quando:
+
+-> Seed é o único ponto de entrada para o domínio.
+-> Causa da falha é determinística (TLS/anti-bot), não transiente.
+
+Se quiser mitigar no código: (a) dar uma lista de User-Agents/headers "browser-like" só para o fetch de seeds; (b) em caso de SSLError na seed, tentar fallback para http:// ou www.<host> (o que já resolveria várias .gov.br); (c) fazer retry com backoff específico para seeds antes de considerá-las "queimadas".

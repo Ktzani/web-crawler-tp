@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-extract_html.py
----------------
 Extrai cada pagina HTML do corpus WARC para um arquivo .html individual.
 Util para inspecao manual (abrir no browser) e validacao.
 

@@ -105,7 +105,7 @@ A config foi quebrada em 5 arquivos dentro de `src/config/`, por tema:
 
 | Arquivo | Conteúdo típico |
 |---|---|
-| `parallelism.py` | `NUM_THREADS` (default 16), `METRICS_INTERVAL = 30s`, `METRICS_FILE` |
+| `parallelism.py` | `NUM_THREADS` (default 16), `METRICS_INTERVAL = 30s`, `METRICS_FILE`, `WATCHDOG_INTERVAL`, `WATCHDOG_STALL_SECONDS`, `WATCHDOG_MIN_PAGES` |
 | `network.py` | `USER_AGENT`, `HTTP_TIMEOUT`, `MAX_PAGE_SIZE` |
 | `politeness.py` | `DEFAULT_CRAWL_DELAY`, `MAX_PAGES_PER_HOST`, `MAX_QUEUE_PER_HOST`, `ROBOTS_TIMEOUT` |
 | `filters.py` | `ALLOWED_SCHEMES`, `NON_HTML_EXTENSIONS`, prefixos de Content-Type HTML |
@@ -149,6 +149,12 @@ continua de onde parou sem re-baixar nada.
 - `ls data/corpus/ | wc -l` mostra quantos WARCs já foram fechados
 - `wc -l data/visited.txt` mostra quantas URLs já foram processadas
 - Ctrl+C faz shutdown limpo (deadline de 10s, grava tudo que já baixou)
+- **Watchdog automático:** se o throughput cair abaixo de
+  `WATCHDOG_MIN_PAGES = 10` páginas a cada 60s, a thread `watchdog`
+  esvazia as filas do frontier e re-enfileira as seeds originais. Isso
+  aparece no log como `[watchdog] ... Reiniciando frontier...` — não é
+  erro, é recuperação automática de estagnação (hosts lentos dominando
+  a fila).
 
 **Ao final:** 100 arquivos `corpus-00000.warc.gz` a `corpus-00099.warc.gz`
 em `data/corpus/`, totalizando ~2–5 GB.
@@ -177,12 +183,30 @@ O speedup é calculado como `tempo(1 thread) / tempo(N threads)`.
 O relatório pede: número de domínios únicos, distribuição de páginas
 por domínio, distribuição de tokens por página.
 
-Para facilitar a inspeção manual, use `src/test/extract_corpus.py` para
-expandir os WARCs em arquivos `.html` individuais em `data/extracted/`:
+Para facilitar a inspeção manual, use
+`src/test/extract_corpus_validation.py` para expandir os WARCs em
+arquivos `.html` individuais em `data/extracted/`:
 
 ```bash
-python3 src/test/extract_corpus.py --corpus-dir data/corpus --out-dir data/extracted
+python3 src/test/extract_corpus_validation.py \
+    --corpus-dir data/corpus --out-dir data/extracted
 ```
+
+**Ferramentas auxiliares em `scripts/`:**
+
+- `scripts/check_seeds.py` — classifica cada seed em visitada
+  diretamente, alcançada via redirect, ou perdida (útil pra diagnosticar
+  seeds que não geraram páginas). Lê `seeds/` + `data/visited.txt`.
+  ```bash
+  python3 scripts/check_seeds.py
+  ```
+- `scripts/dedupe_corpus.py` — reescreve `data/corpus/` removendo
+  páginas cuja URL já apareceu antes (mantém a 1ª ocorrência e preserva
+  a rotação de `PAGES_PER_WARC`). O corpus original é movido para
+  `data/corpus.bak/` antes da reescrita.
+  ```bash
+  python3 scripts/dedupe_corpus.py
+  ```
 
 Para a caracterização propriamente dita, crie um notebook em
 `data/analysis/characterize.ipynb` com algo como:
